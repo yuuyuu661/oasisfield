@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>おあしすフィールド 管理メニュー</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="admin-page">
+  <header class="topbar">
+    <div>
+      <h1>カード管理</h1>
+      <p>カード追加・編集・削除 / localStorage保存</p>
+    </div>
+    <a class="admin-link" href="index.html">ゲームへ戻る</a>
+  </header>
+
+  <section class="admin-grid">
+    <form id="cardForm" class="panel admin-form">
+      <input type="hidden" id="editUid">
+
+      <label>カード名
+        <input id="cardName" required>
+      </label>
+
+      <label>種類
+        <select id="cardType">
+          <option value="weapon">武器カード</option>
+          <option value="enchant">エンチャントカード</option>
+          <option value="armor">防御カード</option>
+          <option value="magic">魔法カード</option>
+          <option value="item">アイテムカード</option>
+        </select>
+      </label>
+
+      <div class="form-row">
+        <label>攻撃力
+          <input id="attack" type="number" value="0">
+        </label>
+        <label>防御力
+          <input id="defense" type="number" value="0">
+        </label>
+      </div>
+
+      <div class="form-row">
+        <label>回復量
+          <input id="heal" type="number" value="0">
+        </label>
+        <label>MP消費
+          <input id="mpCost" type="number" value="0">
+        </label>
+      </div>
+
+      <label>属性
+        <select id="element">
+          <option value="none">なし</option>
+          <option value="fire">火</option>
+          <option value="water">水</option>
+          <option value="wood">木</option>
+          <option value="earth">土</option>
+          <option value="light">光</option>
+          <option value="dark">闇</option>
+        </select>
+      </label>
+
+      <label>説明
+        <textarea id="desc" rows="4"></textarea>
+      </label>
+
+      <label>画像
+        <input id="imageInput" type="file" accept="image/*">
+      </label>
+
+      <div id="imagePreview" class="image-preview">画像プレビュー</div>
+
+      <button class="primary-btn" type="submit">保存</button>
+      <button class="ghost-btn" type="button" id="clearBtn">新規入力に戻す</button>
+    </form>
+
+    <section class="panel admin-list">
+      <div class="panel-title">登録カード一覧</div>
+      <div id="cardList"></div>
+    </section>
+  </section>
+</div>
+
+<script src="admin.js"></script>
+</body>
+</html>

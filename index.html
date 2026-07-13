@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>おあしすフィールド Engine V6</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="game-shell">
+
+  <header class="topbar">
+    <div>
+      <h1>おあしすフィールド</h1>
+      <p>Engine V6 / 新UIレイアウト</p>
+    </div>
+    <div class="top-actions">
+      <a class="admin-link" href="admin.html">管理メニュー</a>
+      <button id="restartBtn">最初から</button>
+    </div>
+  </header>
+
+  <main class="game-layout">
+
+    <section class="progress-panel panel">
+      <div class="panel-title">進行状況</div>
+
+      <div class="turn-box">
+        <div id="phaseBadge" class="phase-badge">あなたの攻撃フェーズ</div>
+        <p id="battleMessage">武器カードを選んでください。</p>
+      </div>
+
+      <div class="selected-box">
+        <div class="sub-title">選択中</div>
+        <div id="selectedCardView" class="small-card-placeholder">なし</div>
+      </div>
+
+      <div class="target-box hidden" id="targetBox">
+        <div class="sub-title">攻撃対象</div>
+        <button id="targetEnemyBtn" class="primary-btn">CPUを攻撃</button>
+        <button id="cancelSelectBtn" class="ghost-btn">選択解除</button>
+      </div>
+
+      <div class="action-row">
+        <button id="confirmDefenseBtn" class="primary-btn hidden">防御確定</button>
+        <button id="prayBtn" class="ghost-btn">祈る</button>
+        <button id="endTurnBtn" class="ghost-btn">ターン終了</button>
+      </div>
+
+      <div class="pile-row">
+        <span>📚 山札 <strong id="deckCount">0</strong></span>
+        <span>🗑 捨て札 <strong id="discardCount">0</strong></span>
+      </div>
+    </section>
+
+    <section class="battle-stage panel">
+      <div class="stage-title">バトル</div>
+
+      <div class="combat-flow">
+        <div class="combat-side">
+          <div id="arenaAttackerName" class="combat-name">攻撃側</div>
+          <div id="arenaAttackCard" class="combat-card empty">攻撃カードなし</div>
+        </div>
+
+        <div class="combat-center">
+          <div class="vs-mark">VS</div>
+          <div id="calcView" class="calc-view">攻撃 0 - 防御 0 = 0</div>
+          <div id="damageView" class="damage-view">待機中</div>
+        </div>
+
+        <div class="combat-side">
+          <div id="arenaDefenderName" class="combat-name">防御側</div>
+          <div id="arenaDefenseCards" class="combat-card-list empty">防御カードなし</div>
+        </div>
+      </div>
+
+      <div class="battle-history">
+        <div class="history-title">直近の使用カード</div>
+        <div class="history-grid">
+          <div>
+            <span>CPU攻撃</span>
+            <div id="enemyAttackSlot" class="history-slot">なし</div>
+          </div>
+          <div>
+            <span>CPU防御</span>
+            <div id="enemyDefenseSlot" class="history-slot">なし</div>
+          </div>
+          <div>
+            <span>あなた攻撃</span>
+            <div id="playerAttackSlot" class="history-slot">なし</div>
+          </div>
+          <div>
+            <span>あなた防御</span>
+            <div id="playerDefenseSlot" class="history-slot">なし</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="players-panel panel">
+      <div class="panel-title">プレイヤーリスト</div>
+
+      <div id="enemyPanel" class="player-card targetable">
+        <div class="player-card-top">
+          <strong>CPU</strong>
+          <span id="enemyPhaseText">待機中</span>
+        </div>
+        <div class="hp-line">
+          <div class="hp-bar"><div id="enemyHpBar"></div></div>
+          <b id="enemyHpText">40 / 40</b>
+        </div>
+        <div id="enemyHandCount" class="hand-count">手札 9</div>
+      </div>
+
+      <div class="player-card me">
+        <div class="player-card-top">
+          <strong>あなた</strong>
+          <span id="playerPhaseText">行動可能</span>
+        </div>
+        <div class="hp-line">
+          <div class="hp-bar"><div id="playerHpBar"></div></div>
+          <b id="playerHpText">40 / 40</b>
+        </div>
+        <div id="playerHandCount" class="hand-count">手札 9</div>
+      </div>
+    </section>
+
+    <section class="hand-panel panel">
+      <div class="hand-header">
+        <div>
+          <div class="panel-title">手札</div>
+          <p id="handHelp">カードを選ぶと右下に詳細が表示されます。</p>
+        </div>
+      </div>
+      <div id="playerHand" class="hand-grid"></div>
+    </section>
+
+    <section class="log-panel panel">
+      <div class="panel-title">ログ</div>
+      <div id="logList" class="log-list"></div>
+    </section>
+
+    <section class="detail-panel panel">
+      <div class="panel-title">カード詳細</div>
+      <div id="cardDetail" class="card-detail empty-detail">
+        カードを選択すると詳細を表示します。
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="cards.js"></script>
+<script src="engine.js"></script>
+<script src="cpu.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
