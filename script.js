@@ -34,10 +34,6 @@ const els = {
   playerHandCount: document.getElementById("playerHandCount"),
   enemyHandCount: document.getElementById("enemyHandCount"),
 
-  playerAttackSlot: document.getElementById("playerAttackSlot"),
-  playerDefenseSlot: document.getElementById("playerDefenseSlot"),
-  enemyAttackSlot: document.getElementById("enemyAttackSlot"),
-  enemyDefenseSlot: document.getElementById("enemyDefenseSlot"),
 
   deckCount: document.getElementById("deckCount"),
   discardCount: document.getElementById("discardCount"),
@@ -55,7 +51,6 @@ function renderGame() {
   renderPhase();
   renderSelectedCard();
   renderArena();
-  renderPlayedSlots();
   renderHand();
   renderDetail();
   renderPiles();
@@ -223,36 +218,6 @@ function renderArena() {
     els.damageView.textContent = `💥 ${battle.damage}ダメージ`;
     els.damageView.classList.add("pop");
   }
-}
-
-function renderPlayedSlots() {
-  renderSlot(els.playerAttackSlot, null);
-  renderSlot(els.playerDefenseSlot, getSelectedDefenseCards(game.player));
-  renderSlot(els.enemyAttackSlot, null);
-  renderSlot(els.enemyDefenseSlot, getSelectedDefenseCards(game.enemy));
-
-  const battle = currentBattle();
-  if (!battle) return;
-
-  if (battle.attackerId === "player") renderSlot(els.playerAttackSlot, battle.attackCard);
-  else renderSlot(els.enemyAttackSlot, battle.attackCard);
-
-  if (battle.defenderId === "player") renderSlot(els.playerDefenseSlot, battle.defenseCards);
-  else renderSlot(els.enemyDefenseSlot, battle.defenseCards);
-}
-
-function renderSlot(el, value) {
-  if (!value || (Array.isArray(value) && value.length === 0)) {
-    el.textContent = "なし";
-    return;
-  }
-
-  if (Array.isArray(value)) {
-    el.textContent = value.map(c => `${cardFace(c)} ${c.name}`).join(" + ");
-    return;
-  }
-
-  el.textContent = `${cardFace(value)} ${value.name}`;
 }
 
 function renderHand() {

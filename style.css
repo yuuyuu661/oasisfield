@@ -142,8 +142,7 @@ button:disabled {
   margin: 10px 0 5px;
 }
 
-.small-card-placeholder,
-.history-slot {
+.small-card-placeholder {
   min-height: 42px;
   border-radius: 10px;
   background: rgba(255,255,255,.52);
@@ -294,28 +293,6 @@ button:disabled {
   0% { transform: scale(.65); opacity: .3; }
   70% { transform: scale(1.16); opacity: 1; }
   100% { transform: scale(1); }
-}
-
-.battle-history {
-  margin-top: 10px;
-}
-
-.history-title {
-  font-weight: 1000;
-  margin-bottom: 6px;
-}
-
-.history-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-
-.history-grid span {
-  display: block;
-  font-size: 12px;
-  font-weight: 900;
-  margin-bottom: 4px;
 }
 
 .player-card {
@@ -723,7 +700,6 @@ button:disabled {
   }
 
   .combat-flow,
-  .history-grid,
   .admin-grid {
     grid-template-columns: 1fr;
   }
