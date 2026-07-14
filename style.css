@@ -179,9 +179,13 @@ button:disabled {
 .combat-flow {
   height: 230px;
   display: grid;
-  grid-template-columns: 1fr 150px 1fr;
+  grid-template-columns: minmax(0, 1fr) 120px minmax(0, 1.35fr);
   gap: 12px;
   align-items: center;
+}
+
+.combat-side {
+  min-width: 0;
 }
 
 .combat-name {
@@ -192,7 +196,9 @@ button:disabled {
 
 .combat-card,
 .combat-card-list {
-  min-height: 180px;
+  height: 180px;
+  min-height: 0;
+  max-height: 180px;
   border-radius: 16px;
   background: rgba(255,255,255,.48);
   border: 2px solid rgba(6,59,44,.12);
@@ -202,8 +208,54 @@ button:disabled {
 }
 
 .combat-card-list {
-  gap: 8px;
-  overflow-y: auto;
+  --card-count: 1;
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  overflow: hidden;
+  container-type: inline-size;
+}
+
+.combat-card-list .battle-card {
+  flex: 0 1 calc((100% - (var(--card-count) - 1) * 6px) / var(--card-count));
+  width: calc((100% - (var(--card-count) - 1) * 6px) / var(--card-count));
+  min-width: 0;
+  max-width: 130px;
+  height: 156px;
+  min-height: 0;
+  padding: 6px;
+  overflow: hidden;
+}
+
+.combat-card-list .battle-card strong,
+.combat-card-list .battle-card span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combat-card-list .battle-art {
+  width: 100%;
+  height: 88px;
+  min-width: 0;
+}
+
+@container (max-width: 250px) {
+  .combat-card-list .battle-card {
+    padding: 3px;
+    gap: 2px;
+  }
+
+  .combat-card-list .battle-card strong,
+  .combat-card-list .battle-card span {
+    font-size: 9px;
+  }
+
+  .combat-card-list .battle-art {
+    height: 105px;
+  }
 }
 
 .empty {
@@ -325,6 +377,16 @@ button:disabled {
   margin-top: 7px;
   font-weight: 900;
   font-size: 13px;
+}
+
+.resource-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 7px;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .hand-header {
@@ -505,6 +567,11 @@ button:disabled {
   font-weight: 1000;
 }
 
+.detail-effect {
+  font-weight: 900;
+  color: #0f766e;
+}
+
 .detail-stats {
   display: flex;
   flex-wrap: wrap;
@@ -539,6 +606,17 @@ button:disabled {
   display: grid;
   gap: 5px;
   font-weight: 1000;
+}
+
+.form-help {
+  margin: -2px 0 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.42);
+  color: #285a4c;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .admin-form input,
@@ -635,5 +713,9 @@ button:disabled {
   .history-grid,
   .admin-grid {
     grid-template-columns: 1fr;
+  }
+
+  .combat-flow {
+    height: auto;
   }
 }

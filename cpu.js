@@ -5,7 +5,7 @@ function cpuTakeAttackAction(game) {
 
   if (cpu.hp <= 20) {
     const heal = cpu.hand.find(card =>
-      (card.type === "item" || card.type === "magic") && card.effect === "heal"
+      (card.type === "item" || card.type === "magic") && isHealingCard(card)
     );
 
     if (heal) {
@@ -21,6 +21,13 @@ function cpuTakeAttackAction(game) {
     .sort((a, b) => (b.attack || 0) - (a.attack || 0));
 
   if (weapons.length === 0) {
+    const utility = cpu.hand.find(card => card.type === "item" || card.type === "magic");
+    if (utility) {
+      game.busy = false;
+      useUtilityAndEndTurn(game, utility.uid);
+      window.renderGame();
+      return;
+    }
     game.busy = false;
     drawCard(game, cpu);
     game.logs.unshift("CPUは祈ってカードを1枚引きました。");
@@ -51,7 +58,7 @@ function cpuChooseDefense(game) {
 
   const attack = game.pendingAttack.attack;
   const armors = defender.hand
-    .filter(card => card.type === "armor")
+    .filter(card => isDefenseCard(card))
     .sort((a, b) => (a.defense || 0) - (b.defense || 0));
 
   let total = 0;

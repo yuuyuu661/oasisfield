@@ -45,7 +45,6 @@
       <div class="action-row">
         <button id="confirmDefenseBtn" class="primary-btn hidden">防御確定</button>
         <button id="prayBtn" class="ghost-btn">祈る</button>
-        <button id="endTurnBtn" class="ghost-btn">ターン終了</button>
       </div>
 
       <div class="pile-row">
@@ -110,6 +109,7 @@
           <div class="hp-bar"><div id="enemyHpBar"></div></div>
           <b id="enemyHpText">40 / 40</b>
         </div>
+        <div class="resource-line"><span id="enemyMpText">MP 20 / 20</span><span id="enemyStatusText">正常</span></div>
         <div id="enemyHandCount" class="hand-count">手札 9</div>
       </div>
 
@@ -122,6 +122,7 @@
           <div class="hp-bar"><div id="playerHpBar"></div></div>
           <b id="playerHpText">40 / 40</b>
         </div>
+        <div class="resource-line"><span id="playerMpText">MP 20 / 20</span><span id="playerStatusText">正常</span></div>
         <div id="playerHandCount" class="hand-count">手札 9</div>
       </div>
     </section>
@@ -151,6 +152,8 @@
   </main>
 </div>
 
+<script src="card-effects.js"></script>
+<script src="card-storage.js"></script>
 <script src="cards.js"></script>
 <script src="engine.js"></script>
 <script src="cpu.js"></script>

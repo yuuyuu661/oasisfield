@@ -1,8 +1,7 @@
-let game = createGame();
+let game = null;
 
 const els = {
   restartBtn: document.getElementById("restartBtn"),
-  endTurnBtn: document.getElementById("endTurnBtn"),
   prayBtn: document.getElementById("prayBtn"),
   confirmDefenseBtn: document.getElementById("confirmDefenseBtn"),
   cancelSelectBtn: document.getElementById("cancelSelectBtn"),
@@ -26,6 +25,10 @@ const els = {
   enemyHpBar: document.getElementById("enemyHpBar"),
   playerHpText: document.getElementById("playerHpText"),
   enemyHpText: document.getElementById("enemyHpText"),
+  playerMpText: document.getElementById("playerMpText"),
+  enemyMpText: document.getElementById("enemyMpText"),
+  playerStatusText: document.getElementById("playerStatusText"),
+  enemyStatusText: document.getElementById("enemyStatusText"),
   playerPhaseText: document.getElementById("playerPhaseText"),
   enemyPhaseText: document.getElementById("enemyPhaseText"),
   playerHandCount: document.getElementById("playerHandCount"),
@@ -65,8 +68,17 @@ function renderHp() {
 
   els.playerHpText.textContent = `${game.player.hp} / ${game.player.maxHp}`;
   els.enemyHpText.textContent = `${game.enemy.hp} / ${game.enemy.maxHp}`;
+  els.playerMpText.textContent = `MP ${game.player.mp} / ${game.player.maxMp}`;
+  els.enemyMpText.textContent = `MP ${game.enemy.mp} / ${game.enemy.maxMp}`;
+  els.playerStatusText.textContent = statusText(game.player);
+  els.enemyStatusText.textContent = statusText(game.enemy);
   els.playerHandCount.textContent = `手札 ${game.player.hand.length}`;
   els.enemyHandCount.textContent = `手札 ${game.enemy.hand.length}`;
+}
+
+function statusText(player) {
+  if (!player.statuses || player.statuses.length === 0) return "正常";
+  return player.statuses.map(status => STATUS_EFFECTS[status] || status).join("・");
 }
 
 function updateBar(el, value, max) {
@@ -108,7 +120,6 @@ function renderPhase() {
   const isTarget = game.phase === "target" && !game.busy;
   const canPray = canAttack && !playerHasWeapon(game.player);
 
-  els.endTurnBtn.disabled = !canAttack;
   els.prayBtn.disabled = !canPray;
   els.confirmDefenseBtn.classList.toggle("hidden", !canDefense);
   els.cancelSelectBtn.classList.toggle("hidden", !isTarget);
@@ -133,7 +144,7 @@ function renderSelectedCard() {
     return;
   }
 
-  els.selectedCardView.innerHTML = miniCardHtml(card, card.type === "armor" ? "defense" : "attack");
+  els.selectedCardView.innerHTML = miniCardHtml(card, isDefenseCard(card) ? "defense" : "attack");
 }
 
 function currentBattle() {
@@ -177,6 +188,7 @@ function renderArena() {
     els.arenaAttackCard.className = "combat-card empty";
     els.arenaAttackCard.textContent = "攻撃カードなし";
     els.arenaDefenseCards.className = "combat-card-list empty";
+    els.arenaDefenseCards.style.setProperty("--card-count", 1);
     els.arenaDefenseCards.textContent = "防御カードなし";
     els.calcView.textContent = "攻撃 0 - 防御 0 = 0";
     els.damageView.textContent = "待機中";
@@ -190,9 +202,11 @@ function renderArena() {
 
   if (!battle.defenseCards || battle.defenseCards.length === 0) {
     els.arenaDefenseCards.className = "combat-card-list empty";
+    els.arenaDefenseCards.style.setProperty("--card-count", 1);
     els.arenaDefenseCards.textContent = "防御カードなし";
   } else {
     els.arenaDefenseCards.className = "combat-card-list";
+    els.arenaDefenseCards.style.setProperty("--card-count", battle.defenseCards.length);
     els.arenaDefenseCards.innerHTML = battle.defenseCards.map(card => bigCardHtml(card)).join("");
   }
 
@@ -257,10 +271,10 @@ function renderHand() {
   game.player.hand.forEach(card => {
     const usableAsAttack = canAttack && (
       card.type === "weapon" ||
-      ((card.type === "item" || card.type === "magic") && card.effect === "heal")
+      card.type === "item" || card.type === "magic"
     );
 
-    const usableAsDefense = canDefense && card.type === "armor";
+    const usableAsDefense = canDefense && isDefenseCard(card);
     const usable = usableAsAttack || usableAsDefense;
     const selected = game.player.selectedDefense.includes(card.uid) || game.selectedAttackUid === card.uid;
 
@@ -305,10 +319,12 @@ function renderDetail() {
     <div class="detail-image">${cardImageHtml(card)}</div>
     <h2>${card.name}</h2>
     <div class="detail-type">${typeLabel(card.type)} / ${elementLabel(card.element)}</div>
+    <div class="detail-effect">${cardEffectLabel(card.type, card.effect)}</div>
     <div class="detail-stats">
       <span>攻撃 ${card.attack || 0}</span>
       <span>防御 ${card.defense || 0}</span>
-      <span>回復 ${card.heal || 0}</span>
+      <span>回復 ${card.heal || card.effectPower || 0}</span>
+      <span>発動率 ${card.effectChance ?? 100}%</span>
     </div>
     <p>${card.desc || ""}</p>
   `;
@@ -364,8 +380,8 @@ function miniCardHtml(card, mode) {
   if (!card) return "";
   const stat = mode === "defense"
     ? `防御 ${card.defense || 0}`
-    : card.effect === "heal"
-      ? `回復 ${card.heal || 0}`
+    : isHealingCard(card)
+      ? `回復 ${card.heal || card.effectPower || 0}`
       : `攻撃 ${card.attack || 0}`;
 
   return `
@@ -378,8 +394,7 @@ function miniCardHtml(card, mode) {
 
 function defaultIcon(type) {
   if (type === "weapon") return "🗡️";
-  if (type === "armor") return "🛡️";
-  if (type === "enchant") return "🔮";
+  if (type === "armor" || type === "enchant") return "🛡️";
   if (type === "magic") return "📖";
   if (type === "item") return "💎";
   return "🃏";
@@ -387,7 +402,7 @@ function defaultIcon(type) {
 
 function typeLabel(type) {
   if (type === "weapon") return "武器";
-  if (type === "armor") return "防御";
+  if (type === "armor" || type === "enchant") return "エンチャント";
   if (type === "enchant") return "エンチャント";
   if (type === "magic") return "魔法";
   if (type === "item") return "アイテム";
@@ -409,19 +424,14 @@ function elementLabel(element) {
 
 function statText(card) {
   if (card.type === "weapon") return `攻撃 ${card.attack || 0}`;
-  if (card.type === "armor") return `防御 ${card.defense || 0}`;
-  if (card.effect === "heal") return `回復 ${card.heal || 0}`;
+  if (isDefenseCard(card)) return `防御 ${card.defense || 0}`;
+  if (isHealingCard(card)) return `回復 ${card.heal || card.effectPower || 0}`;
   if (card.type === "magic") return `MP ${card.mpCost || 0}`;
   return "";
 }
 
 els.restartBtn.addEventListener("click", () => {
   game = createGame();
-  renderGame();
-});
-
-els.endTurnBtn.addEventListener("click", () => {
-  endPlayerTurn(game);
   renderGame();
 });
 
@@ -454,4 +464,10 @@ els.enemyPanel.addEventListener("click", () => {
   }
 });
 
-renderGame();
+async function initializeGame() {
+  await hydrateRegisteredCardImages();
+  game = createGame();
+  renderGame();
+}
+
+initializeGame();

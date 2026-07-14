@@ -8,6 +8,10 @@ function createPlayer(name, isCpu = false) {
     isCpu,
     hp: 40,
     maxHp: 40,
+    mp: 20,
+    maxMp: 20,
+    attackBoost: 0,
+    statuses: [],
     hand: [],
     selectedDefense: []
   };
@@ -93,8 +97,8 @@ function selectAttackCard(game, uid) {
     return;
   }
 
-  if ((card.type === "item" || card.type === "magic") && card.effect === "heal") {
-    useHealAndEndTurn(game, uid);
+  if (card.type === "item" || card.type === "magic") {
+    useUtilityAndEndTurn(game, uid);
     return;
   }
 
@@ -121,10 +125,18 @@ function startAttack(game, uid, defenderId) {
   const used = removeCardFromHand(attacker, uid);
   if (!used || used.type !== "weapon") return false;
 
+  let attackValue = (used.attack || 0) + (attacker.attackBoost || 0);
+  if (used.effect === "multi_hit") attackValue *= Math.max(1, used.hitCount || 1);
+  if (used.effect === "mp_scaled_attack") {
+    attackValue = attacker.mp * (used.effectPower || 2);
+    attacker.mp = 0;
+  }
+  attacker.attackBoost = 0;
+
   game.defenderId = defenderId;
   game.pendingAttack = {
     card: used,
-    attack: used.attack,
+    attack: attackValue,
     attackerId: game.attackerId,
     defenderId
   };
@@ -134,7 +146,7 @@ function startAttack(game, uid, defenderId) {
     defenderId,
     attackCard: used,
     defenseCards: [],
-    attack: used.attack,
+    attack: attackValue,
     defense: 0,
     damage: null
   };
@@ -146,7 +158,7 @@ function startAttack(game, uid, defenderId) {
   const defender = game[defenderId];
   defender.selectedDefense = [];
 
-  game.logs.unshift(`${attacker.name}は「${used.name}」で${defender.name}を攻撃。攻撃${used.attack}。`);
+  game.logs.unshift(`${attacker.name}は「${used.name}」で${defender.name}を攻撃。攻撃${attackValue}。`);
 
   if (defender.isCpu) {
     game.busy = true;
@@ -169,13 +181,65 @@ function startAttack(game, uid, defenderId) {
 }
 
 function useHealAndEndTurn(game, uid) {
+  useUtilityAndEndTurn(game, uid);
+}
+
+function useUtilityAndEndTurn(game, uid) {
   if (game.busy || game.winner || game.phase !== "attack") return;
 
   const actor = getActor(game);
   const used = removeCardFromHand(actor, uid);
   if (!used) return;
 
-  healPlayer(game, actor, used.heal || 0);
+  const target = actor === game.player ? game.enemy : game.player;
+  const amount = used.effectPower || used.heal || used.attack || 0;
+  let resultText = cardEffectLabel(used.type, used.effect);
+
+  if (used.effect === "heal" || used.effect === "heal_hp") {
+    healPlayer(game, actor, amount);
+    resultText = `回復 ${amount}`;
+  } else if (used.effect === "heal_mp") {
+    const before = actor.mp;
+    actor.mp = Math.min(actor.maxMp, actor.mp + amount);
+    resultText = `MP回復 ${actor.mp - before}`;
+  } else if (used.effect === "boost_attack") {
+    actor.attackBoost += amount;
+    resultText = `攻撃力 +${amount}`;
+  } else if (used.effect === "draw") {
+    drawCards(game, actor, Math.max(1, amount));
+    resultText = `${Math.max(1, amount)}枚ドロー`;
+  } else if (used.effect === "cure_status") {
+    actor.statuses = used.statusEffect === "all"
+      ? []
+      : actor.statuses.filter(status => status !== used.statusEffect);
+    resultText = "災いを解除";
+  } else if (used.effect === "inflict_status") {
+    if (used.statusEffect && used.statusEffect !== "none" && !target.statuses.includes(used.statusEffect)) {
+      target.statuses.push(used.statusEffect);
+    }
+    resultText = `${STATUS_EFFECTS[used.statusEffect] || "災い"}を付与`;
+  } else if (["magic_attack", "magic_all_attack", "hp_drain"].includes(used.effect)) {
+    const cost = used.mpCost || 0;
+    if (actor.mp < cost) {
+      actor.hand.push(used);
+      game.logs.unshift(`MPが${cost}必要です。`);
+      return;
+    }
+    actor.mp -= cost;
+    const damage = Math.max(0, amount);
+    target.hp = Math.max(0, target.hp - damage);
+    if (used.effect === "hp_drain") healPlayer(game, actor, damage);
+    resultText = `${damage}ダメージ`;
+  } else if (used.effect === "random_heal_damage") {
+    if (Math.random() < 0.5) {
+      healPlayer(game, actor, amount);
+      resultText = `回復 ${amount}`;
+    } else {
+      actor.hp = Math.max(0, actor.hp - amount);
+      resultText = `自分に${amount}ダメージ`;
+    }
+  }
+
   game.discard.push(used);
 
   game.lastBattle = {
@@ -185,14 +249,14 @@ function useHealAndEndTurn(game, uid) {
     defenseCards: [],
     attack: 0,
     defense: 0,
-    damage: `回復 ${used.heal || 0}`
+    damage: resultText
   };
 
   drawCards(game, actor, 1);
   checkWinner(game);
 
   if (!game.winner) {
-    game.logs.unshift("回復カードを使用したためターン終了。");
+    game.logs.unshift(`${used.name}を使用したためターン終了。`);
     passTurn(game);
   }
 }
@@ -218,7 +282,7 @@ function toggleDefenseCard(game, uid) {
   if (defender.isCpu) return;
 
   const card = defender.hand.find(c => c.uid === uid);
-  if (!card || card.type !== "armor") return;
+  if (!isDefenseCard(card)) return;
 
   game.focusedCard = card;
 
@@ -255,6 +319,15 @@ function resolvePendingAttack(game) {
 
   game.discard.push(game.pendingAttack.card);
   defender.hp = Math.max(0, defender.hp - damage);
+
+  const attackCard = game.pendingAttack.card;
+  const chance = (attackCard.effectChance ?? 100) / 100;
+  if (damage > 0 && attackCard.effect === "inflict_status" && Math.random() <= chance) {
+    const status = attackCard.statusEffect;
+    if (status && status !== "none" && !defender.statuses.includes(status)) defender.statuses.push(status);
+  }
+  if (damage > 0 && attackCard.effect === "hp_drain") healPlayer(game, attacker, damage);
+  if (attackCard.effect === "self_damage") attacker.hp = Math.max(0, attacker.hp - damage);
 
   game.lastBattle = {
     attackerId: game.pendingAttack.attackerId,
@@ -322,12 +395,6 @@ function passTurn(game) {
       window.renderGame();
     }, CPU_DELAY);
   }
-}
-
-function endPlayerTurn(game) {
-  if (game.busy || game.winner || game.phase !== "attack" || game.turn !== "player") return;
-  game.logs.unshift("あなたは攻撃せずにターン終了しました。");
-  passTurn(game);
 }
 
 function checkWinner(game) {

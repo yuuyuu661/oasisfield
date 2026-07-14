@@ -10,7 +10,7 @@
   <header class="topbar">
     <div>
       <h1>カード管理</h1>
-      <p>カード追加・編集・削除 / localStorage保存</p>
+      <p>カード追加・編集・削除 / 画像・GIFも端末に保存</p>
     </div>
     <a class="admin-link" href="index.html">ゲームへ戻る</a>
   </header>
@@ -27,11 +27,16 @@
         <select id="cardType">
           <option value="weapon">武器カード</option>
           <option value="enchant">エンチャントカード</option>
-          <option value="armor">防御カード</option>
           <option value="magic">魔法カード</option>
           <option value="item">アイテムカード</option>
         </select>
       </label>
+
+      <label>付与する効果
+        <select id="cardEffect"></select>
+      </label>
+
+      <p id="effectHelp" class="form-help"></p>
 
       <div class="form-row">
         <label>攻撃力
@@ -39,6 +44,33 @@
         </label>
         <label>防御力
           <input id="defense" type="number" value="0">
+        </label>
+      </div>
+
+      <div class="form-row">
+        <label>効果量
+          <input id="effectPower" type="number" value="0">
+        </label>
+        <label>発動確率（%）
+          <input id="effectChance" type="number" min="0" max="100" value="100">
+        </label>
+      </div>
+
+      <div class="form-row">
+        <label>使用回数・攻撃回数
+          <input id="hitCount" type="number" min="1" value="1">
+        </label>
+        <label>追加数値
+          <input id="secondaryValue" type="number" value="0">
+        </label>
+      </div>
+
+      <div class="form-row">
+        <label>対象
+          <select id="target"></select>
+        </label>
+        <label>付与・解除する災い
+          <select id="statusEffect"></select>
         </label>
       </div>
 
@@ -67,9 +99,11 @@
         <textarea id="desc" rows="4"></textarea>
       </label>
 
-      <label>画像
-        <input id="imageInput" type="file" accept="image/*">
+      <label>カード画像（GIF対応）
+        <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/*">
       </label>
+
+      <p class="form-help">画像はブラウザ内の専用保存領域に保管され、ページやPCを再起動しても残ります。GIFはアニメーションしたまま表示されます。</p>
 
       <div id="imagePreview" class="image-preview">画像プレビュー</div>
 
@@ -84,6 +118,8 @@
   </section>
 </div>
 
+<script src="card-effects.js"></script>
+<script src="card-storage.js"></script>
 <script src="admin.js"></script>
 </body>
 </html>

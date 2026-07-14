@@ -51,7 +51,7 @@ const DEFAULT_CARDS = [
     id: "stone_guard",
     name: "石守りの盾",
     icon: "🛡️",
-    type: "armor",
+    type: "enchant",
     attack: 0,
     defense: 5,
     heal: 0,
@@ -63,7 +63,7 @@ const DEFAULT_CARDS = [
     id: "leaf_cloak",
     name: "若葉の外套",
     icon: "🍃",
-    type: "armor",
+    type: "enchant",
     attack: 0,
     defense: 3,
     heal: 0,
@@ -75,7 +75,7 @@ const DEFAULT_CARDS = [
     id: "mirror_scale",
     name: "鏡鱗の鎧",
     icon: "🪞",
-    type: "armor",
+    type: "enchant",
     attack: 0,
     defense: 8,
     heal: 0,
@@ -109,6 +109,8 @@ const DEFAULT_CARDS = [
   }
 ];
 
+let registeredCardsCache = null;
+
 function loadRegisteredCards() {
   try {
     return JSON.parse(localStorage.getItem("oasisFieldCards") || "[]");
@@ -118,7 +120,26 @@ function loadRegisteredCards() {
 }
 
 function getCardMaster() {
-  return [...DEFAULT_CARDS, ...loadRegisteredCards()];
+  return [...DEFAULT_CARDS, ...(registeredCardsCache || loadRegisteredCards())];
+}
+
+async function hydrateRegisteredCardImages() {
+  const cards = loadRegisteredCards().map(card => ({
+    ...card,
+    type: card.type === "armor" ? "enchant" : card.type,
+    effect: card.type === "armor" && !card.effect ? "defense" : card.effect
+  }));
+
+  registeredCardsCache = await Promise.all(cards.map(async card => {
+    if (!card.imageKey) return card;
+    try {
+      const image = await loadCardImageUrl(card.imageKey);
+      return { ...card, image: image || card.image || "" };
+    } catch (error) {
+      console.error(error);
+      return card;
+    }
+  }));
 }
 
 function createDeck() {
@@ -126,7 +147,7 @@ function createDeck() {
   const master = getCardMaster();
 
   master.forEach(card => {
-    const copies = card.type === "armor" ? 4 : 3;
+    const copies = isDefenseCard(card) ? 4 : 3;
     for (let i = 0; i < copies; i++) {
       deck.push({
         ...card,
@@ -136,6 +157,17 @@ function createDeck() {
   });
 
   return shuffle(deck);
+}
+
+function isDefenseCard(card) {
+  return card && (
+    card.type === "armor" ||
+    (card.type === "enchant" && (card.effect === "defense" || card.effect === "attack_defense" || (card.defense || 0) > 0))
+  );
+}
+
+function isHealingCard(card) {
+  return card && (card.effect === "heal" || card.effect === "heal_hp" || (card.heal || 0) > 0);
 }
 
 function makeUid() {
