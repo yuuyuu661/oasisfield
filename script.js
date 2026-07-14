@@ -430,34 +430,34 @@ function statText(card) {
   return "";
 }
 
-els.restartBtn.addEventListener("click", () => {
+els.restartBtn?.addEventListener("click", () => {
   game = createGame();
   renderGame();
 });
 
-els.prayBtn.addEventListener("click", () => {
+els.prayBtn?.addEventListener("click", () => {
   if (game.phase !== "attack" || game.turn !== "player" || game.winner || game.busy) return;
   prayAndEndTurn(game, game.player);
   renderGame();
 });
 
-els.confirmDefenseBtn.addEventListener("click", () => {
+els.confirmDefenseBtn?.addEventListener("click", () => {
   if (game.phase !== "defense" || game.defenderId !== "player" || game.winner || game.busy) return;
   resolvePendingAttack(game);
   renderGame();
 });
 
-els.cancelSelectBtn.addEventListener("click", () => {
+els.cancelSelectBtn?.addEventListener("click", () => {
   cancelSelection(game);
   renderGame();
 });
 
-els.targetEnemyBtn.addEventListener("click", () => {
+els.targetEnemyBtn?.addEventListener("click", () => {
   chooseAttackTarget(game, "enemy");
   renderGame();
 });
 
-els.enemyPanel.addEventListener("click", () => {
+els.enemyPanel?.addEventListener("click", () => {
   if (game.phase === "target" && !game.busy) {
     chooseAttackTarget(game, "enemy");
     renderGame();
