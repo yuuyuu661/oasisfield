@@ -61,6 +61,15 @@ function cpuChooseDefense(game) {
     .filter(card => isDefenseCard(card))
     .sort((a, b) => (a.defense || 0) - (b.defense || 0));
 
+  if (defender.statuses.includes("flash")) {
+    const strongest = [...armors].sort((a, b) => (b.defense || 0) - (a.defense || 0))[0];
+    defender.selectedDefense = strongest ? [strongest.uid] : [];
+    game.logs.unshift(strongest
+      ? `CPUは閃光のため防御カードを1枚だけ選びました。`
+      : "CPUは防御できませんでした。");
+    return;
+  }
+
   let total = 0;
   const selected = [];
 

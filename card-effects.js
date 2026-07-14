@@ -78,6 +78,19 @@ const STATUS_EFFECTS = {
   all: "すべての災い"
 };
 
+const STATUS_DESCRIPTIONS = {
+  none: "災いを付与しません。",
+  cold: "ターン終了時にHP-1。5%で熱病へ悪化します。",
+  fever: "ターン終了時にHP-2。5%で地獄病へ悪化します。",
+  hell: "ターン終了時にHP-5。5%で天国病へ悪化します。",
+  heaven: "ターン終了時にHP+5。5%で発作が起きHP0になります。",
+  fog: "相手のHP・MP・災い情報が見えなくなります。",
+  flash: "防御時に使用できるカードが1枚になります。",
+  dream: "手札の約半数が別のカードに見えます。治癒すると元の表示へ戻ります。",
+  dark_cloud: "受ける全体攻撃が必ず命中します。",
+  all: "付与済みの災いをすべて解除します。"
+};
+
 const TARGET_TYPES = {
   enemy: "敵1人",
   all_enemies: "敵全員",

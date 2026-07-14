@@ -1,6 +1,7 @@
 const HAND_SIZE = 9;
 const CPU_DELAY = 900;
 const RESOLVE_DELAY = 1100;
+const DISEASE_CHAIN = ["cold", "fever", "hell", "heaven"];
 
 function createPlayer(name, isCpu = false) {
   return {
@@ -214,10 +215,11 @@ function useUtilityAndEndTurn(game, uid) {
       : actor.statuses.filter(status => status !== used.statusEffect);
     resultText = "災いを解除";
   } else if (used.effect === "inflict_status") {
-    if (used.statusEffect && used.statusEffect !== "none" && !target.statuses.includes(used.statusEffect)) {
-      target.statuses.push(used.statusEffect);
-    }
-    resultText = `${STATUS_EFFECTS[used.statusEffect] || "災い"}を付与`;
+    const chance = (used.effectChance ?? 100) / 100;
+    const applied = Math.random() <= chance && applyStatusEffect(game, target, used.statusEffect);
+    resultText = applied
+      ? `${STATUS_EFFECTS[used.statusEffect] || "災い"}を付与`
+      : "災いの付与に失敗";
   } else if (["magic_attack", "magic_all_attack", "hp_drain"].includes(used.effect)) {
     const cost = used.mpCost || 0;
     if (actor.mp < cost) {
@@ -288,6 +290,9 @@ function toggleDefenseCard(game, uid) {
 
   if (defender.selectedDefense.includes(uid)) {
     defender.selectedDefense = defender.selectedDefense.filter(id => id !== uid);
+  } else if (defender.statuses.includes("flash")) {
+    defender.selectedDefense = [uid];
+    game.logs.unshift(`${defender.name}は閃光のため防御カードを1枚しか使えません。`);
   } else {
     defender.selectedDefense.push(uid);
   }
@@ -310,7 +315,12 @@ function resolvePendingAttack(game) {
 
   const defenseCards = getSelectedDefenseCards(defender);
   const defenseTotal = defenseCards.reduce((s, c) => s + (c.defense || 0), 0);
-  const damage = Math.max(0, game.pendingAttack.attack - defenseTotal);
+  const attackCard = game.pendingAttack.card;
+  const hitChance = (attackCard.effectChance ?? 100) / 100;
+  const canMiss = attackCard.effect === "all_attack" && hitChance < 1;
+  const unavoidable = defender.statuses.includes("dark_cloud");
+  const hit = !canMiss || unavoidable || Math.random() <= hitChance;
+  const damage = hit ? Math.max(0, game.pendingAttack.attack - defenseTotal) : 0;
 
   defenseCards.forEach(card => {
     removeCardFromHand(defender, card.uid);
@@ -320,12 +330,16 @@ function resolvePendingAttack(game) {
   game.discard.push(game.pendingAttack.card);
   defender.hp = Math.max(0, defender.hp - damage);
 
-  const attackCard = game.pendingAttack.card;
   const chance = (attackCard.effectChance ?? 100) / 100;
   if (damage > 0 && attackCard.effect === "inflict_status" && Math.random() <= chance) {
-    const status = attackCard.statusEffect;
-    if (status && status !== "none" && !defender.statuses.includes(status)) defender.statuses.push(status);
+    applyStatusEffect(game, defender, attackCard.statusEffect);
   }
+  defenseCards
+    .filter(card => card.effect === "inflict_status")
+    .forEach(card => {
+      const defenseChance = (card.effectChance ?? 100) / 100;
+      if (Math.random() <= defenseChance) applyStatusEffect(game, attacker, card.statusEffect);
+    });
   if (damage > 0 && attackCard.effect === "hp_drain") healPlayer(game, attacker, damage);
   if (attackCard.effect === "self_damage") attacker.hp = Math.max(0, attacker.hp - damage);
 
@@ -344,7 +358,9 @@ function resolvePendingAttack(game) {
     : "防御なし";
 
   game.logs.unshift(`${defender.name}の防御: ${defenseText}`);
-  game.logs.unshift(`攻撃${game.pendingAttack.attack} - 防御${defenseTotal} = ${damage}ダメージ。`);
+  game.logs.unshift(hit
+    ? `攻撃${game.pendingAttack.attack} - 防御${defenseTotal} = ${damage}ダメージ。`
+    : `${attackCard.name}は外れました。`);
 
   const attackerDraw = 1;
   const defenderDraw = defenseCards.length;
@@ -376,6 +392,14 @@ function healPlayer(game, player, amount) {
 function passTurn(game) {
   if (game.winner) return;
 
+  const endingPlayer = game[game.turn];
+  processEndOfTurnStatuses(game, endingPlayer);
+  checkWinner(game);
+  if (game.winner) {
+    window.renderGame();
+    return;
+  }
+
   game.turn = game.turn === "player" ? "enemy" : "player";
   game.attackerId = game.turn;
   game.defenderId = game.turn === "player" ? "enemy" : "player";
@@ -395,6 +419,59 @@ function passTurn(game) {
       window.renderGame();
     }, CPU_DELAY);
   }
+}
+
+function applyStatusEffect(game, player, status) {
+  if (!status || status === "none" || status === "all") return false;
+
+  const incomingDisease = DISEASE_CHAIN.indexOf(status);
+  const currentDisease = DISEASE_CHAIN.findIndex(item => player.statuses.includes(item));
+
+  if (incomingDisease !== -1 && currentDisease !== -1) {
+    player.statuses = player.statuses.filter(item => !DISEASE_CHAIN.includes(item));
+    if (currentDisease === DISEASE_CHAIN.length - 1) {
+      player.hp = 0;
+      game.logs.unshift(`${player.name}の天国病が発作を起こしました。`);
+      return true;
+    }
+    const worsened = DISEASE_CHAIN[currentDisease + 1];
+    player.statuses.push(worsened);
+    game.logs.unshift(`${player.name}の災いが${STATUS_EFFECTS[worsened]}へ悪化しました。`);
+    return true;
+  }
+
+  if (player.statuses.includes(status)) return false;
+  player.statuses.push(status);
+  game.logs.unshift(`${player.name}は${STATUS_EFFECTS[status] || status}になりました。`);
+  return true;
+}
+
+function processEndOfTurnStatuses(game, player) {
+  const disease = DISEASE_CHAIN.find(status => player.statuses.includes(status));
+  const hpChange = { cold: -1, fever: -2, hell: -5, heaven: 5 }[disease] || 0;
+
+  if (hpChange < 0) {
+    player.hp = Math.max(0, player.hp + hpChange);
+    game.logs.unshift(`${STATUS_EFFECTS[disease]}により${player.name}のHPが${-hpChange}減りました。`);
+  } else if (hpChange > 0) {
+    const before = player.hp;
+    player.hp = Math.min(player.maxHp, player.hp + hpChange);
+    game.logs.unshift(`${STATUS_EFFECTS[disease]}により${player.name}のHPが${player.hp - before}回復しました。`);
+  }
+
+  if (!disease || player.hp <= 0 || Math.random() > 0.05) return;
+
+  const index = DISEASE_CHAIN.indexOf(disease);
+  if (index === DISEASE_CHAIN.length - 1) {
+    player.hp = 0;
+    game.logs.unshift(`${player.name}の天国病が発作を起こしました。`);
+    return;
+  }
+
+  player.statuses = player.statuses.filter(status => status !== disease);
+  const worsened = DISEASE_CHAIN[index + 1];
+  player.statuses.push(worsened);
+  game.logs.unshift(`${player.name}の災いが${STATUS_EFFECTS[worsened]}へ悪化しました。`);
 }
 
 function checkWinner(game) {

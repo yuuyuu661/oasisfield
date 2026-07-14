@@ -59,14 +59,15 @@ function renderGame() {
 
 function renderHp() {
   updateBar(els.playerHpBar, game.player.hp, game.player.maxHp);
-  updateBar(els.enemyHpBar, game.enemy.hp, game.enemy.maxHp);
+  const enemyHidden = game.player.statuses.includes("fog");
+  updateBar(els.enemyHpBar, enemyHidden ? 0 : game.enemy.hp, game.enemy.maxHp);
 
   els.playerHpText.textContent = `${game.player.hp} / ${game.player.maxHp}`;
-  els.enemyHpText.textContent = `${game.enemy.hp} / ${game.enemy.maxHp}`;
+  els.enemyHpText.textContent = enemyHidden ? "??? / ???" : `${game.enemy.hp} / ${game.enemy.maxHp}`;
   els.playerMpText.textContent = `MP ${game.player.mp} / ${game.player.maxMp}`;
-  els.enemyMpText.textContent = `MP ${game.enemy.mp} / ${game.enemy.maxMp}`;
+  els.enemyMpText.textContent = enemyHidden ? "MP ?? / ??" : `MP ${game.enemy.mp} / ${game.enemy.maxMp}`;
   els.playerStatusText.textContent = statusText(game.player);
-  els.enemyStatusText.textContent = statusText(game.enemy);
+  els.enemyStatusText.textContent = enemyHidden ? "不明" : statusText(game.enemy);
   els.playerHandCount.textContent = `手札 ${game.player.hand.length}`;
   els.enemyHandCount.textContent = `手札 ${game.enemy.hand.length}`;
 }
@@ -139,7 +140,8 @@ function renderSelectedCard() {
     return;
   }
 
-  els.selectedCardView.innerHTML = miniCardHtml(card, isDefenseCard(card) ? "defense" : "attack");
+  const visibleCard = visibleCardForPlayer(card);
+  els.selectedCardView.innerHTML = miniCardHtml(visibleCard, isDefenseCard(visibleCard) ? "defense" : "attack");
 }
 
 function currentBattle() {
@@ -234,6 +236,7 @@ function renderHand() {
       : "カードを選ぶと右下に詳細が表示されます。";
 
   game.player.hand.forEach(card => {
+    const visibleCard = visibleCardForPlayer(card);
     const usableAsAttack = canAttack && (
       card.type === "weapon" ||
       card.type === "item" || card.type === "magic"
@@ -245,7 +248,7 @@ function renderHand() {
 
     const cardEl = document.createElement("div");
     cardEl.className = `hand-card ${card.type} ${usable ? "" : "disabled"} ${selected ? "selected" : ""}`;
-    cardEl.innerHTML = cardHtml(card);
+    cardEl.innerHTML = cardHtml(visibleCard);
 
     cardEl.addEventListener("mouseenter", () => {
       game.focusedCard = card;
@@ -271,13 +274,15 @@ function renderHand() {
 }
 
 function renderDetail() {
-  const card = game.focusedCard || game.selectedAttackCard;
+  const actualCard = game.focusedCard || game.selectedAttackCard;
 
-  if (!card) {
+  if (!actualCard) {
     els.cardDetail.className = "card-detail empty-detail";
     els.cardDetail.textContent = "カードを選択すると詳細を表示します。";
     return;
   }
+
+  const card = visibleCardForPlayer(actualCard);
 
   els.cardDetail.className = "card-detail";
   els.cardDetail.innerHTML = `
@@ -293,6 +298,19 @@ function renderDetail() {
     </div>
     <p>${card.desc || ""}</p>
   `;
+}
+
+function visibleCardForPlayer(card) {
+  if (!card || !game.player.statuses.includes("dream")) return card;
+  if (!game.player.hand.some(handCard => handCard.uid === card.uid)) return card;
+
+  const hash = String(card.uid).split("").reduce((sum, character) => sum + character.charCodeAt(0), 0);
+  if (hash % 2 === 0) return card;
+
+  const alternatives = getCardMaster().filter(master => master.id !== card.id);
+  if (alternatives.length === 0) return card;
+  const disguise = alternatives[hash % alternatives.length];
+  return { ...disguise, uid: card.uid, name: `${disguise.name}？` };
 }
 
 function renderPiles() {

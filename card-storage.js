@@ -15,10 +15,11 @@ function openCardImageDb() {
 }
 
 async function storeCardImage(cardId, file) {
+  const storedImage = typeof file === "string" ? file : await cardImageToDataUrl(file);
   const db = await openCardImageDb();
   await new Promise((resolve, reject) => {
     const transaction = db.transaction(CARD_IMAGE_STORE, "readwrite");
-    transaction.objectStore(CARD_IMAGE_STORE).put(file, cardId);
+    transaction.objectStore(CARD_IMAGE_STORE).put(storedImage, cardId);
     transaction.oncomplete = resolve;
     transaction.onerror = () => reject(transaction.error);
   });
@@ -33,7 +34,25 @@ async function loadCardImageUrl(cardId) {
     request.onerror = () => reject(request.error);
   });
   db.close();
-  return blob ? URL.createObjectURL(blob) : "";
+  if (!blob) return "";
+  if (typeof blob === "string") return blob;
+
+  const dataUrl = await cardImageToDataUrl(blob);
+  try {
+    await storeCardImage(cardId, dataUrl);
+  } catch (error) {
+    console.error(error);
+  }
+  return dataUrl;
+}
+
+function cardImageToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 
 async function removeCardImage(cardId) {

@@ -8,6 +8,8 @@ const clearBtn = document.getElementById("clearBtn");
 const cardTypeInput = document.getElementById("cardType");
 const cardEffectInput = document.getElementById("cardEffect");
 const effectHelp = document.getElementById("effectHelp");
+const statusEffectInput = document.getElementById("statusEffect");
+const statusHelp = document.getElementById("statusHelp");
 
 let selectedImageFile = null;
 let currentImageUrl = "";
@@ -59,8 +61,13 @@ function updateEffectHelp() {
 
 cardTypeInput.addEventListener("change", () => renderEffectOptions());
 cardEffectInput.addEventListener("change", updateEffectHelp);
+statusEffectInput.addEventListener("change", updateStatusHelp);
 
-imageInput.addEventListener("change", () => {
+function updateStatusHelp() {
+  statusHelp.textContent = STATUS_DESCRIPTIONS[statusEffectInput.value] || "";
+}
+
+imageInput.addEventListener("change", async () => {
   const file = imageInput.files[0];
   if (!file) return;
   if (!file.type.startsWith("image/")) {
@@ -70,9 +77,16 @@ imageInput.addEventListener("change", () => {
   }
 
   selectedImageFile = file;
-  if (currentImageUrl.startsWith("blob:")) URL.revokeObjectURL(currentImageUrl);
-  currentImageUrl = URL.createObjectURL(file);
-  imagePreview.innerHTML = `<img src="${currentImageUrl}" alt="画像プレビュー">`;
+  try {
+    currentImageUrl = await fileToDataUrl(file);
+    imagePreview.innerHTML = `<img src="${currentImageUrl}" alt="画像プレビュー">`;
+  } catch (error) {
+    console.error(error);
+    selectedImageFile = null;
+    currentImageUrl = "";
+    imageInput.value = "";
+    imagePreview.textContent = "画像を読み込めませんでした";
+  }
 });
 
 form.addEventListener("submit", async event => {
@@ -142,6 +156,7 @@ function resetForm() {
   currentImageUrl = "";
   imagePreview.textContent = "画像プレビュー";
   renderEffectOptions();
+  updateStatusHelp();
 }
 
 function fileToDataUrl(file) {
@@ -210,6 +225,7 @@ async function editCard(id) {
 
   document.getElementById("target").value = card.target || "enemy";
   document.getElementById("statusEffect").value = card.statusEffect || "none";
+  updateStatusHelp();
   document.getElementById("element").value = card.element || "none";
   document.getElementById("desc").value = card.desc || "";
   selectedImageFile = null;
@@ -239,5 +255,6 @@ function escapeHtml(value) {
 
 fillSelect(document.getElementById("target"), TARGET_TYPES);
 fillSelect(document.getElementById("statusEffect"), STATUS_EFFECTS);
+updateStatusHelp();
 renderEffectOptions();
 renderList();
