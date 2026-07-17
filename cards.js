@@ -106,6 +106,20 @@ const DEFAULT_CARDS = [
     effect: "heal",
     element: "light",
     desc: "自分のHPを4回復。使用後ターン終了。"
+  },
+  {
+    id: "verdant_scythe",
+    name: "深緑の大鎌",
+    icon: "🌙",
+    type: "weapon",
+    attack: 4,
+    defense: 0,
+    heal: 0,
+    effect: "multi_hit",
+    hitCount: 2,
+    element: "wood",
+    image: "cards/verdant_scythe.png",
+    desc: "攻撃4を2回。深い森に潜む大鎌、苔むした刃が緑の光を纏う。"
   }
 ];
 
