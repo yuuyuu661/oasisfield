@@ -24,8 +24,6 @@ const els = {
   calcView: document.getElementById("calcView"),
   damageView: document.getElementById("damageView"),
 
-  playerHpBar: document.getElementById("playerHpBar"),
-  enemyHpBar: document.getElementById("enemyHpBar"),
   playerHpText: document.getElementById("playerHpText"),
   enemyHpText: document.getElementById("enemyHpText"),
   playerMpText: document.getElementById("playerMpText"),
@@ -59,12 +57,10 @@ function renderGame() {
 }
 
 function renderHp() {
-  updateBar(els.playerHpBar, game.player.hp, game.player.maxHp);
   const enemyHidden = game.player.statuses.includes("fog");
-  updateBar(els.enemyHpBar, enemyHidden ? 0 : game.enemy.hp, game.enemy.maxHp);
 
-  els.playerHpText.textContent = `HP ${game.player.hp} / ${game.player.maxHp}`;
-  els.enemyHpText.textContent = enemyHidden ? "HP ?? / ??" : `HP ${game.enemy.hp} / ${game.enemy.maxHp}`;
+  els.playerHpText.textContent = `HP ${game.player.hp}`;
+  els.enemyHpText.textContent = enemyHidden ? "HP ??" : `HP ${game.enemy.hp}`;
   els.playerMpText.textContent = `MP ${game.player.mp}`;
   els.enemyMpText.textContent = enemyHidden ? "MP ??" : `MP ${game.enemy.mp}`;
   els.playerGoldText.textContent = `￥${game.player.gold}`;
@@ -88,10 +84,6 @@ function renderGuardianBadge(element, guardian) {
 function statusText(player) {
   if (!player.statuses || player.statuses.length === 0) return "正常";
   return player.statuses.map(status => STATUS_EFFECTS[status] || status).join("・");
-}
-
-function updateBar(el, value, max) {
-  el.style.width = `${Math.max(0, Math.min(100, value / max * 100))}%`;
 }
 
 function renderPhase() {

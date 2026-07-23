@@ -12,6 +12,7 @@ const effectHelp = document.getElementById("effectHelp");
 const statusEffectInput = document.getElementById("statusEffect");
 const statusHelp = document.getElementById("statusHelp");
 const catalogFilter = document.getElementById("catalogFilter");
+const catalogSearch = document.getElementById("catalogSearch");
 
 let selectedImageFile = null;
 let currentImageUrl = "";
@@ -41,9 +42,17 @@ function saveOverrides(overrides) {
   localStorage.setItem(OVERRIDE_STORAGE_KEY, JSON.stringify(overrides));
 }
 
+function getBuiltInCatalog() {
+  if (Array.isArray(window.OASIS_CATALOG_CARDS)) return window.OASIS_CATALOG_CARDS;
+  if (typeof OASIS_CATALOG_CARDS !== "undefined" && Array.isArray(OASIS_CATALOG_CARDS)) {
+    return OASIS_CATALOG_CARDS;
+  }
+  return [];
+}
+
 function standardCardsWithOverrides() {
   const overrides = loadOverrides();
-  return (window.OASIS_CATALOG_CARDS || [])
+  return getBuiltInCatalog()
     .map(card => ({ ...card, ...(overrides[card.id] || {}) }));
 }
 
@@ -120,7 +129,7 @@ form.addEventListener("submit", async event => {
   const cards = loadCards();
   const editUid = document.getElementById("editUid").value;
   const id = editUid || `custom_${Date.now()}`;
-  const standardBase = (window.OASIS_CATALOG_CARDS || []).find(card => card.id === id);
+  const standardBase = getBuiltInCatalog().find(card => card.id === id);
   const oldCard = cards.find(card => card.id === id)
     || (standardBase ? { ...standardBase, ...(loadOverrides()[id] || {}) } : null);
 
@@ -217,12 +226,24 @@ async function resolveImage(card) {
 
 async function renderList() {
   const filter = catalogFilter?.value || "all";
+  const query = (catalogSearch?.value || "").trim().toLocaleLowerCase("ja");
   const allStandardCards = standardCardsWithOverrides();
   const customCards = loadCards();
+  if (allStandardCards.length === 0) {
+    list.innerHTML = `
+      <div class="admin-error">
+        標準カードカタログを読み込めませんでした。ページを再読み込みしてください。
+      </div>`;
+    return;
+  }
   const registeredCards = [
     ...allStandardCards.map(card => ({ ...card, isStandard: true })),
     ...customCards.map(card => ({ ...card, isStandard: false }))
-  ].filter(card => filter === "all" || (card.type === "armor" ? "enchant" : card.type) === filter);
+  ].filter(card => {
+    const typeMatches = filter === "all" || (card.type === "armor" ? "enchant" : card.type) === filter;
+    const textMatches = !query || `${card.name} ${card.desc || ""}`.toLocaleLowerCase("ja").includes(query);
+    return typeMatches && textMatches;
+  });
 
   const rows = await Promise.all(registeredCards.map(async card => {
     const image = await resolveImage(card);
@@ -232,7 +253,7 @@ async function renderList() {
           ${image ? `<img src="${image}" alt="${escapeHtml(card.name)}" loading="lazy">` : "🃏"}
         </div>
         <div class="admin-card-body">
-          <strong>${escapeHtml(card.name)} <small>${card.isStandard ? "標準" : "追加"}</small></strong>
+          <strong>${escapeHtml(card.name)} <small>${card.isStandard ? "実装済み" : "追加"}</small></strong>
           <span>${cardTypeLabel(card.type)} / ${cardEffectLabel(card.type, card.effect)}</span>
           <span>攻撃${card.attack || 0} / 防御${card.defense || 0} / 価格￥${card.price || 0}</span>
           <p>${escapeHtml(card.desc || "")}</p>
@@ -248,11 +269,13 @@ async function renderList() {
 
   list.innerHTML = `
     <div class="catalog-summary">
-      表示中 <strong>${registeredCards.length}</strong>枚 /
-      標準 <strong>${allStandardCards.length}</strong>枚 /
-      追加 <strong>${customCards.length}</strong>枚
+      <span>表示中 <strong>${registeredCards.length}</strong>枚</span>
+      <span>実装済み <strong>${allStandardCards.length}</strong>枚</span>
+      <span>追加 <strong>${customCards.length}</strong>枚</span>
     </div>
-    ${rows.length ? rows.join("") : '<div class="admin-empty">この種類の登録カードはありません。</div>'}`;
+    ${rows.length
+      ? `<div class="admin-card-grid">${rows.join("")}</div>`
+      : '<div class="admin-empty">条件に一致するカードはありません。</div>'}`;
 }
 
 async function editCard(id) {
@@ -322,3 +345,4 @@ updateStatusHelp();
 renderEffectOptions();
 renderList();
 catalogFilter?.addEventListener("change", renderList);
+catalogSearch?.addEventListener("input", renderList);

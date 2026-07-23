@@ -2,11 +2,12 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>おあしすフィールド 管理メニュー</title>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="stylesheet" href="style.css?v=9.2.0">
+  <link rel="stylesheet" href="style.css?v=9.3.0">
 </head>
 <body>
 <div class="admin-page">
@@ -126,24 +127,31 @@
     </form>
 
     <section class="panel admin-list">
-      <div class="panel-title">登録カード一覧</div>
-      <label class="catalog-filter">種類で絞り込み
-        <select id="catalogFilter">
-          <option value="all">すべて</option>
-          <option value="weapon">武器</option>
-          <option value="enchant">エンチャント</option>
-          <option value="magic">魔法</option>
-          <option value="item">アイテム</option>
-        </select>
-      </label>
-      <div id="cardList"></div>
+      <div class="panel-title">実装カード一覧</div>
+      <div class="catalog-toolbar">
+        <label class="catalog-search">カード名・説明を検索
+          <input id="catalogSearch" type="search" placeholder="例：アイスブーツ">
+        </label>
+        <label class="catalog-filter">種類で絞り込み
+          <select id="catalogFilter">
+            <option value="all">すべて</option>
+            <option value="weapon">武器</option>
+            <option value="enchant">エンチャント</option>
+            <option value="magic">魔法</option>
+            <option value="item">アイテム</option>
+          </select>
+        </label>
+      </div>
+      <div id="cardList" aria-live="polite">
+        <div class="admin-empty">カードカタログを読み込んでいます…</div>
+      </div>
     </section>
   </section>
 </div>
 
-<script src="card-effects.js?v=9.2.0"></script>
-<script src="card-storage.js?v=9.2.0"></script>
-<script src="catalog.js?v=9.2.0"></script>
-<script src="admin.js?v=9.2.0"></script>
+<script src="card-effects.js?v=9.3.0"></script>
+<script src="card-storage.js?v=9.3.0"></script>
+<script src="catalog.js?v=9.3.0"></script>
+<script src="admin.js?v=9.3.0"></script>
 </body>
 </html>

@@ -7,8 +7,8 @@ body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #083326;
   background:
-    radial-gradient(circle at 20% 0%, rgba(255,255,255,.75), transparent 30%),
-    linear-gradient(135deg, #76d7c4 0%, #3fb785 45%, #167a63 100%);
+    radial-gradient(circle at 50% 22%, rgba(229,255,250,.9), transparent 34%),
+    linear-gradient(145deg, #91eadf 0%, #55cdb6 48%, #12a47d 100%);
   min-height: 100vh;
 }
 
@@ -30,9 +30,9 @@ button:disabled {
 
 .game-shell,
 .admin-page {
-  width: min(1420px, 100%);
+  width: min(1280px, 100%);
   margin: 0 auto;
-  padding: 14px;
+  padding: 10px;
 }
 
 .topbar {
@@ -41,17 +41,22 @@ button:disabled {
   gap: 12px;
   align-items: center;
   color: white;
-  text-shadow: 0 2px 6px rgba(0,0,0,.28);
-  margin-bottom: 10px;
+  background: #078d6c;
+  border: 2px solid rgba(255,255,255,.62);
+  border-radius: 10px;
+  padding: 7px 10px;
+  text-shadow: 0 2px 5px rgba(0,0,0,.22);
+  margin-bottom: 8px;
 }
 
 .topbar h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 23px;
 }
 
 .topbar p {
   margin: 3px 0 0;
+  font-size: 12px;
 }
 
 .top-actions {
@@ -96,12 +101,12 @@ button:disabled {
 }
 
 .panel {
-  border: 2px solid rgba(255,255,255,.46);
-  background: rgba(231, 255, 247, .72);
-  box-shadow: 0 12px 30px rgba(0,0,0,.18), inset 0 0 24px rgba(255,255,255,.25);
-  border-radius: 16px;
-  padding: 12px;
-  backdrop-filter: blur(6px);
+  border: 2px solid rgba(0,128,96,.33);
+  background: rgba(238, 255, 250, .84);
+  box-shadow: 0 6px 16px rgba(0,77,58,.15), inset 0 0 18px rgba(255,255,255,.28);
+  border-radius: 11px;
+  padding: 10px;
+  backdrop-filter: blur(4px);
 }
 
 .panel-title,
@@ -401,11 +406,11 @@ button:disabled {
 }
 
 .player-card {
-  border-radius: 14px;
-  background: rgba(255,255,255,.48);
-  border: 2px solid rgba(6,59,44,.13);
-  padding: 10px;
-  margin-bottom: 10px;
+  border-radius: 9px;
+  background: rgba(255,255,255,.66);
+  border: 2px solid rgba(0,130,96,.23);
+  padding: 8px;
+  margin-bottom: 8px;
   transition: .2s ease;
 }
 
@@ -435,24 +440,20 @@ button:disabled {
 }
 
 .hp-line {
-  display: grid;
-  grid-template-columns: 1fr 72px;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  min-height: 28px;
 }
 
-.hp-bar {
-  height: 14px;
-  border-radius: 999px;
-  background: rgba(6,59,44,.18);
-  overflow: hidden;
-}
-
-.hp-bar > div {
-  height: 100%;
-  width: 100%;
-  background: linear-gradient(90deg, #ff4d6d, #ff8fa3);
-  transition: width .55s ease;
+.hp-line b {
+  display: inline-block;
+  min-width: 96px;
+  border-radius: 7px;
+  padding: 4px 8px;
+  background: #fff;
+  color: #d92f50;
+  border: 1px solid rgba(0,130,96,.2);
+  font-variant-numeric: tabular-nums;
 }
 
 .hand-count {
@@ -755,6 +756,32 @@ button:disabled {
   min-width: 0;
 }
 
+.catalog-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 220px);
+  gap: 8px;
+  align-items: end;
+}
+
+.catalog-search,
+.catalog-filter {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 10px;
+  font-weight: 900;
+}
+
+.catalog-search input,
+.catalog-filter select {
+  width: 100%;
+  min-width: 0;
+  border: 2px solid rgba(6,59,44,.18);
+  border-radius: 9px;
+  padding: 8px;
+  font: inherit;
+  background: white;
+}
+
 .image-preview {
   height: 170px;
   display: grid;
@@ -767,17 +794,19 @@ button:disabled {
 
 .admin-card {
   display: grid;
-  grid-template-columns: 90px 1fr auto;
-  gap: 10px;
+  grid-template-columns: 76px minmax(0, 1fr);
+  grid-template-rows: 1fr auto;
+  gap: 8px;
   background: rgba(255,255,255,.48);
-  border-radius: 14px;
-  padding: 10px;
-  margin-bottom: 10px;
+  border: 2px solid rgba(0,130,96,.14);
+  border-radius: 10px;
+  padding: 8px;
+  margin: 0;
 }
 
 .admin-card-image {
-  width: 90px;
-  height: 90px;
+  width: 76px;
+  height: 76px;
   background: #d7fff2;
   border-radius: 12px;
   overflow: hidden;
@@ -789,6 +818,7 @@ button:disabled {
 .admin-card-body {
   display: grid;
   gap: 3px;
+  min-width: 0;
 }
 
 .admin-card-body span {
@@ -798,18 +828,30 @@ button:disabled {
 
 .admin-card-body p {
   margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12px;
 }
 
 .admin-card-actions {
-  display: grid;
+  grid-column: 1 / -1;
+  display: flex;
   gap: 6px;
-  align-content: start;
 }
 
 .admin-card-actions button {
+  flex: 1;
   border-radius: 9px;
   padding: 7px 10px;
   background: #ffd34d;
+}
+
+.admin-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
 }
 
 .admin-empty {
@@ -828,6 +870,9 @@ button:disabled {
   color: #173f32;
   font-weight: 900;
   box-shadow: 0 5px 14px rgba(0,0,0,.1);
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .catalog-heading {
@@ -836,15 +881,17 @@ button:disabled {
   border-bottom: 2px solid rgba(6,59,44,.16);
 }
 
-.catalog-filter {
-  display: grid;
-  gap: 5px;
-  margin-bottom: 10px;
-  font-weight: 900;
-}
-
 .reset-card-btn {
   background: rgba(255,255,255,.75) !important;
+}
+
+.admin-error {
+  padding: 18px;
+  border: 2px solid #e75b6f;
+  border-radius: 10px;
+  background: #fff0f2;
+  color: #8c1930;
+  font-weight: 900;
 }
 
 .standard-card .admin-card-body p {
@@ -856,23 +903,259 @@ button:disabled {
     grid-template-columns: 1fr;
     grid-template-rows: auto;
     grid-template-areas:
-      "players"
       "stage"
+      "players"
       "hand"
       "detail"
       "log";
   }
 
-  .combat-flow,
   .admin-grid {
     grid-template-columns: 1fr;
   }
 
   .combat-flow {
-    height: auto;
+    height: 210px;
+    grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr);
+    gap: 7px;
   }
 
   .exchange-box {
     grid-template-columns: 1fr;
+  }
+
+  .players-panel {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .players-panel > .panel-title {
+    grid-column: 1 / -1;
+    margin-bottom: 0;
+  }
+
+  .player-card {
+    margin: 0;
+  }
+}
+
+@media (max-width: 680px) {
+  .game-shell,
+  .admin-page {
+    padding: 4px;
+  }
+
+  .topbar {
+    border-radius: 6px;
+    padding: 5px 7px;
+  }
+
+  .topbar h1 {
+    font-size: 17px;
+  }
+
+  .topbar p {
+    display: none;
+  }
+
+  .topbar button,
+  .admin-link,
+  .primary-btn,
+  .ghost-btn {
+    min-height: 40px;
+    padding: 7px 10px;
+  }
+
+  .game-layout {
+    gap: 5px;
+  }
+
+  .panel {
+    border-radius: 7px;
+    padding: 7px;
+  }
+
+  .stage-heading .stage-title,
+  .players-panel > .panel-title {
+    display: none;
+  }
+
+  .phase-badge {
+    width: 100%;
+    text-align: center;
+    border-radius: 7px;
+    padding: 6px 8px;
+  }
+
+  .battle-message {
+    margin: 5px 0;
+    min-height: 20px;
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .combat-flow {
+    height: 178px;
+    grid-template-columns: minmax(0, 1fr) 46px minmax(0, 1fr);
+    gap: 3px;
+  }
+
+  .combat-name {
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+
+  .combat-card,
+  .combat-card-list {
+    height: 148px;
+    max-height: 148px;
+    padding: 4px;
+    border-radius: 8px;
+  }
+
+  .combat-card-list .battle-card,
+  .battle-card {
+    width: 100%;
+    max-width: 108px;
+    min-height: 138px;
+    height: 138px;
+    padding: 4px;
+  }
+
+  .combat-card-list .battle-art,
+  .battle-art {
+    height: 76px;
+  }
+
+  .battle-card strong,
+  .battle-card span {
+    font-size: 10px;
+  }
+
+  .vs-mark {
+    font-size: 22px;
+  }
+
+  .calc-view {
+    margin-top: 5px;
+    font-size: 10px;
+  }
+
+  .damage-view {
+    margin-top: 5px;
+    font-size: 15px;
+  }
+
+  .players-panel {
+    padding: 5px;
+    gap: 5px;
+  }
+
+  .player-card {
+    padding: 6px;
+    font-size: 12px;
+  }
+
+  .player-card-top {
+    margin-bottom: 3px;
+  }
+
+  .player-card-top span {
+    padding: 2px 5px;
+    font-size: 10px;
+  }
+
+  .hp-line {
+    min-height: 23px;
+  }
+
+  .hp-line b {
+    min-width: 0;
+    padding: 2px 5px;
+  }
+
+  .resource-line {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    margin-top: 3px;
+    font-size: 10px;
+  }
+
+  .hand-count,
+  .guardian-badge {
+    margin-top: 3px;
+    font-size: 10px;
+  }
+
+  .guardian-badge {
+    min-height: 23px;
+    padding: 3px 5px;
+  }
+
+  .guardian-badge img {
+    width: 22px;
+    height: 22px;
+  }
+
+  .hand-panel .panel-title {
+    margin-bottom: 2px;
+  }
+
+  .hand-header p {
+    font-size: 11px;
+  }
+
+  .hand-grid {
+    gap: 5px;
+    padding-top: 5px;
+    scroll-snap-type: x proximity;
+  }
+
+  .hand-card {
+    flex-basis: 94px;
+    height: 154px;
+    border-radius: 8px;
+    border-width: 2px;
+    padding: 5px;
+    scroll-snap-align: start;
+  }
+
+  .card-art {
+    height: 82px;
+    border-radius: 6px;
+  }
+
+  .card-name {
+    margin-top: 4px;
+    height: 30px;
+    font-size: 11px;
+  }
+
+  .card-stat {
+    font-size: 11px;
+  }
+
+  .catalog-toolbar,
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-form {
+    order: 2;
+  }
+
+  .admin-list {
+    order: 1;
+  }
+
+  .admin-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .catalog-summary {
+    position: static;
+    gap: 7px;
+    font-size: 12px;
   }
 }
