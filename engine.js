@@ -38,6 +38,7 @@ function createGame() {
     logs: [],
     selectedAttackUid: null,
     selectedAttackCard: null,
+    selectedAttackEnhancementUids: [],
     selectedUtilityUid: null,
     focusedCard: null,
     pendingAttack: null,
@@ -93,25 +94,37 @@ function removeCardFromHand(player, uid) {
 }
 
 function playerHasWeapon(player) {
-  return player.hand.some(card => card.type === "weapon");
+  return player.hand.some(card => card.type === "weapon" && !isAdditionalAttackCard(card));
 }
 
 function selectAttackCard(game, uid) {
-  if (game.busy || game.winner || game.phase !== "attack" || game.turn !== "player") return;
+  if (game.busy || game.winner || !["attack", "target"].includes(game.phase) || game.turn !== "player") return;
   const actor = getActor(game);
   const card = actor.hand.find(candidate => candidate.uid === uid);
   if (!card) return;
   game.focusedCard = card;
 
+  if (isAdditionalAttackCard(card)) {
+    const selected = game.selectedAttackEnhancementUids.includes(uid);
+    game.selectedAttackEnhancementUids = selected
+      ? game.selectedAttackEnhancementUids.filter(selectedUid => selectedUid !== uid)
+      : [...game.selectedAttackEnhancementUids, uid];
+    game.logs.unshift(selected
+      ? `追加攻撃「${card.name}」の選択を解除しました。`
+      : `追加攻撃「${card.name}」を選択しました。`);
+    return;
+  }
+
   if (card.type === "weapon") {
     game.selectedAttackUid = uid;
     game.selectedAttackCard = card;
     game.phase = "target";
-    game.logs.unshift(`「${card.name}」を選択。攻撃対象を選んでください。`);
+    game.logs.unshift(`「${card.name}」を選択。追加攻撃カードを重ねるか、攻撃対象を選んでください。`);
     return;
   }
 
   if (card.type === "item") {
+    game.selectedAttackEnhancementUids = [];
     if (["sell", "buy", "exchange"].includes(card.effect)) {
       beginTrade(game, uid);
     } else {
@@ -123,18 +136,20 @@ function selectAttackCard(game, uid) {
   }
 
   if (card.type === "magic") {
+    game.selectedAttackEnhancementUids = [];
     const targetId = card.target === "self" ? game.attackerId : opponentId(game.attackerId);
     useUtilityAndEndTurn(game, uid, targetId);
     return;
   }
 
-  game.logs.unshift("行動時に使えるのは武器・魔法・アイテムです。エンチャントは防御時だけ使えます。");
+  game.logs.unshift("通常のエンチャントは防御時に使います。追加攻撃カードは武器と組み合わせて使えます。");
 }
 
 function cancelSelection(game) {
   if (game.busy || !["target", "utility_target", "sell_card", "sell_target", "buy_target", "buy_offer", "exchange"].includes(game.phase)) return;
   game.selectedAttackUid = null;
   game.selectedAttackCard = null;
+  game.selectedAttackEnhancementUids = [];
   game.selectedUtilityUid = null;
   game.pendingTrade = null;
   game.phase = "attack";
@@ -143,7 +158,13 @@ function cancelSelection(game) {
 
 function chooseActionTarget(game, targetId) {
   if (game.busy || game.winner || !["player", "enemy"].includes(targetId)) return false;
-  if (game.phase === "target") return startAttack(game, game.selectedAttackUid, targetId);
+  if (game.phase === "target") {
+    if (targetId === game.attackerId) {
+      game.logs.unshift("武器カードの対象に自分は選べません。");
+      return false;
+    }
+    return startAttack(game, game.selectedAttackUid, targetId);
+  }
   if (game.phase === "utility_target") return useUtilityAndEndTurn(game, game.selectedUtilityUid, targetId);
   if (game.phase === "sell_target") return completeSale(game, targetId);
   if (game.phase === "buy_target") return preparePurchaseOffer(game, targetId);
@@ -164,11 +185,20 @@ function startAttack(game, uid, defenderId) {
   if (game.busy || game.winner || game.phase !== "target") return false;
   const attacker = getActor(game);
   const used = removeCardFromHand(attacker, uid);
-  if (!used || used.type !== "weapon") return false;
+  if (!used || used.type !== "weapon" || isAdditionalAttackCard(used)) return false;
+  const enhancementCards = game.selectedAttackEnhancementUids
+    .map(selectedUid => removeCardFromHand(attacker, selectedUid))
+    .filter(card => isAdditionalAttackCard(card));
 
   if (used.effect === "random_target") defenderId = Math.random() < 0.5 ? "player" : "enemy";
   const defender = game[defenderId];
-  let attackValue = ((used.attack || 0) + (attacker.attackBoost || 0)) * (attacker.attackMultiplier || 1);
+  const additionalAttack = enhancementCards.reduce((sum, card) => sum + Number(card.attack || 0), 0);
+  const attackElement = [...enhancementCards]
+    .reverse()
+    .find(card => card.element && card.element !== "none")?.element
+    || used.element
+    || "none";
+  let attackValue = ((used.attack || 0) + additionalAttack + (attacker.attackBoost || 0)) * (attacker.attackMultiplier || 1);
   if (used.effect === "mp_scaled_attack") {
     attackValue = attacker.mp * (used.effectPower || 2);
     attacker.mp = 0;
@@ -180,6 +210,8 @@ function startAttack(game, uid, defenderId) {
   game.defenderId = defenderId;
   game.pendingAttack = {
     card: used,
+    enhancementCards,
+    element: attackElement,
     attack: attackValue,
     hitCount,
     hit,
@@ -190,6 +222,8 @@ function startAttack(game, uid, defenderId) {
     attackerId: game.attackerId,
     defenderId,
     attackCard: used,
+    attackCards: [used, ...enhancementCards],
+    element: attackElement,
     defenseCards: [],
     attack: attackValue,
     defense: 0,
@@ -201,10 +235,12 @@ function startAttack(game, uid, defenderId) {
   };
   game.selectedAttackUid = null;
   game.selectedAttackCard = null;
+  game.selectedAttackEnhancementUids = [];
   attacker.attackMultiplier = 1;
   attacker.forceNextHit = false;
   defender.selectedDefense = [];
-  game.logs.unshift(`${attacker.name}の「${used.name}」は${hit ? "命中しました" : "外れました"}。`);
+  const attackNames = [used, ...enhancementCards].map(card => `「${card.name}」`).join("＋");
+  game.logs.unshift(`${attacker.name}の${attackNames}は${hit ? "命中しました" : "外れました"}。`);
 
   if (!hit) {
     game.phase = "resolving";
@@ -360,6 +396,7 @@ function useUtilityAndEndTurn(game, uid, targetId) {
     attackerId: game.attackerId,
     defenderId: resolvedTargetId,
     attackCard: used,
+    element: used.element || "none",
     defenseCards: [],
     attack: used.attack || amount,
     defense: 0,
@@ -625,6 +662,8 @@ function resolvePendingAttack(game) {
     attackerId: pending.attackerId,
     defenderId: pending.defenderId,
     attackCard: pending.card,
+    attackCards: [pending.card, ...(pending.enhancementCards || [])],
+    element: pending.element || pending.card.element || "none",
     defenseCards,
     attack: pending.attack,
     defense: defenseTotal,
@@ -641,7 +680,7 @@ function resolvePendingAttack(game) {
 
   defender.selectedDefense = [];
   game.pendingAttack = null;
-  drawCards(game, attacker, 1);
+  drawCards(game, attacker, 1 + (pending.enhancementCards?.length || 0));
   drawCards(game, defender, defenseCards.length);
   checkWinner(game);
   renderNow();
@@ -675,6 +714,7 @@ function passTurn(game) {
   game.phase = "attack";
   game.selectedAttackUid = null;
   game.selectedAttackCard = null;
+  game.selectedAttackEnhancementUids = [];
   game.selectedUtilityUid = null;
   game.pendingTrade = null;
   game.hitResult = null;

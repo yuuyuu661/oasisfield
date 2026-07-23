@@ -16,7 +16,6 @@ const els = {
 
   phaseBadge: document.getElementById("phaseBadge"),
   battleMessage: document.getElementById("battleMessage"),
-  selectedCardView: document.getElementById("selectedCardView"),
 
   arenaAttackerName: document.getElementById("arenaAttackerName"),
   arenaDefenderName: document.getElementById("arenaDefenderName"),
@@ -52,7 +51,6 @@ window.renderGame = renderGame;
 function renderGame() {
   renderHp();
   renderPhase();
-  renderSelectedCard();
   renderArena();
   renderHand();
   renderDetail();
@@ -150,6 +148,7 @@ function renderPhase() {
   const canAttack = game.phase === "attack" && game.turn === "player" && !game.winner && !game.busy;
   const canDefense = game.phase === "defense" && game.defenderId === "player" && !game.winner && !game.busy;
   const needsTarget = ["target", "utility_target", "sell_target", "buy_target"].includes(game.phase) && !game.busy;
+  const canTargetSelf = game.phase === "utility_target" && !game.busy;
   const isSelection = ["target", "utility_target", "sell_target", "buy_target", "buy_offer", "exchange"].includes(game.phase) && !game.busy;
   const canPray = canAttack && !playerHasWeapon(game.player);
 
@@ -158,8 +157,9 @@ function renderPhase() {
   els.cancelSelectBtn.classList.toggle("hidden", !isSelection);
   els.targetBox.classList.toggle("hidden", !isSelection);
   els.enemyPanel.classList.toggle("target-highlight", needsTarget);
+  els.playerPanel.classList.toggle("target-highlight", canTargetSelf);
   els.targetEnemyBtn.classList.toggle("hidden", !needsTarget);
-  els.targetSelfBtn.classList.toggle("hidden", !needsTarget || ["sell_target", "buy_target"].includes(game.phase));
+  els.targetSelfBtn.classList.toggle("hidden", !canTargetSelf);
   els.hitResult.classList.toggle("hidden", !game.hitResult);
   els.hitResult.classList.toggle("hit", Boolean(game.hitResult?.hit));
   els.hitResult.classList.toggle("miss", game.hitResult?.hit === false);
@@ -176,20 +176,6 @@ function getPlayerPhaseText(id) {
   return "待機中";
 }
 
-function renderSelectedCard() {
-  const card = game.selectedAttackCard
-    || game.player.hand.find(candidate => candidate.uid === game.selectedUtilityUid)
-    || game.focusedCard;
-
-  if (!card) {
-    els.selectedCardView.textContent = "選択中: なし";
-    return;
-  }
-
-  const visibleCard = visibleCardForPlayer(card);
-  els.selectedCardView.innerHTML = miniCardHtml(visibleCard, isDefenseCard(visibleCard) ? "defense" : "attack");
-}
-
 function currentBattle() {
   if (game.pendingAttack) {
     const defender = getDefender(game);
@@ -200,6 +186,8 @@ function currentBattle() {
       attackerId: game.pendingAttack.attackerId,
       defenderId: game.pendingAttack.defenderId,
       attackCard: game.pendingAttack.card,
+      attackCards: [game.pendingAttack.card, ...(game.pendingAttack.enhancementCards || [])],
+      element: game.pendingAttack.element || game.pendingAttack.card.element || "none",
       defenseCards,
       attack: game.pendingAttack.attack,
       hitCount: game.pendingAttack.hitCount,
@@ -213,8 +201,23 @@ function currentBattle() {
       attackerId: game.attackerId,
       defenderId: game.turn === "player" ? "enemy" : "player",
       attackCard: game.selectedAttackCard,
+      attackCards: [
+        game.selectedAttackCard,
+        ...game.selectedAttackEnhancementUids
+          .map(uid => getActor(game).hand.find(card => card.uid === uid))
+          .filter(Boolean)
+      ],
+      element: game.selectedAttackEnhancementUids
+        .map(uid => getActor(game).hand.find(card => card.uid === uid))
+        .filter(card => card?.element && card.element !== "none")
+        .at(-1)?.element
+        || game.selectedAttackCard.element
+        || "none",
       defenseCards: [],
-      attack: game.selectedAttackCard.attack || 0,
+      attack: (game.selectedAttackCard.attack || 0) + game.selectedAttackEnhancementUids
+        .map(uid => getActor(game).hand.find(card => card.uid === uid))
+        .filter(Boolean)
+        .reduce((sum, card) => sum + Number(card.attack || 0), 0),
       defense: 0,
       damage: null
     };
@@ -236,13 +239,16 @@ function renderArena() {
     els.arenaDefenseCards.textContent = "防御カードなし";
     els.calcView.textContent = "攻撃 0 - 防御 0 = 0";
     els.damageView.textContent = "待機中";
+    els.damageView.dataset.element = "none";
     return;
   }
 
   els.arenaAttackerName.textContent = game[battle.attackerId].name;
   els.arenaDefenderName.textContent = game[battle.defenderId].name;
-  els.arenaAttackCard.className = "combat-card";
-  els.arenaAttackCard.innerHTML = bigCardHtml(battle.attackCard);
+  const attackCards = battle.attackCards?.length ? battle.attackCards : [battle.attackCard];
+  els.arenaAttackCard.className = attackCards.length > 1 ? "combat-card-list" : "combat-card";
+  els.arenaAttackCard.style.setProperty("--card-count", attackCards.length);
+  els.arenaAttackCard.innerHTML = attackCards.map(card => bigCardHtml(card)).join("");
 
   if (!battle.defenseCards || battle.defenseCards.length === 0) {
     els.arenaDefenseCards.className = "combat-card-list empty";
@@ -256,6 +262,7 @@ function renderArena() {
 
   const perHit = Math.max(0, (battle.attack || 0) - (battle.defense || 0));
   const result = perHit * Math.max(1, battle.hitCount || 1);
+  els.damageView.dataset.element = battle.element || battle.attackCard?.element || "none";
   els.calcView.textContent = battle.hitCount > 1
     ? `(${battle.attack || 0} - 防御 ${battle.defense || 0}) × ${battle.hitCount}回 = ${result}`
     : `攻撃 ${battle.attack || 0} - 防御 ${battle.defense || 0} = ${result}`;
@@ -277,7 +284,8 @@ function renderHand() {
 
   const canAttack = game.phase === "attack" && game.turn === "player" && !game.winner && !game.busy;
   const canDefense = game.phase === "defense" && game.defenderId === "player" && !game.winner && !game.busy;
-  const isTarget = game.phase === "target" && !game.busy;
+  const isTarget = game.phase === "target" && game.turn === "player" && !game.busy;
+  const canChooseAttackCards = (canAttack || isTarget) && !game.winner;
   const isSelectingSale = game.phase === "sell_card" && game.turn === "player" && !game.busy;
 
   els.handHelp.textContent = canDefense
@@ -285,14 +293,15 @@ function renderHand() {
     : isSelectingSale
       ? "売りたいカードを1枚選んでください。"
     : isTarget
-      ? "対象を選択中です。"
+      ? "追加攻撃カードを選ぶか、攻撃対象を選んでください。"
       : "カードを選ぶと右下に詳細が表示されます。";
 
   game.player.hand.forEach(card => {
     const visibleCard = visibleCardForPlayer(card);
-    const usableAsAttack = canAttack && (
-      card.type === "weapon" ||
-      card.type === "item" || card.type === "magic"
+    const usableAsAttack = (
+      canChooseAttackCards && (card.type === "weapon" || isAdditionalAttackCard(card))
+    ) || (
+      canAttack && (card.type === "item" || card.type === "magic")
     );
 
     const usableAsDefense = canDefense && card.type === "enchant" && isDefenseCard(card);
@@ -300,6 +309,7 @@ function renderHand() {
     const usable = usableAsAttack || usableAsDefense || usableAsSale;
     const selected = game.player.selectedDefense.includes(card.uid)
       || game.selectedAttackUid === card.uid
+      || game.selectedAttackEnhancementUids.includes(card.uid)
       || game.selectedUtilityUid === card.uid;
 
     const cardEl = document.createElement("div");
@@ -353,7 +363,6 @@ function renderDetail() {
       ${isHealingCard(card) ? `<span>回復 ${card.heal || card.effectPower || 0}</span>` : ""}
       ${card.type === "magic" ? `<span>MP消費 ${card.mpCost || 0}</span>` : ""}
       <span>価格 ￥${card.price || 0}</span>
-      <span>授かり率 ${card.drawRate ?? 0.2}%</span>
       ${(card.effectChance ?? 100) < 100 ? `<span>命中率 ${card.effectChance}%</span>` : ""}
     </div>
     <p>${card.desc || ""}</p>
@@ -512,6 +521,7 @@ function elementLabel(element) {
 
 function statText(card) {
   const chance = (card.effectChance ?? 100) < 100 ? ` / 命中${card.effectChance}%` : "";
+  if (isAdditionalAttackCard(card)) return `追加攻撃 +${card.attack || 0}${chance}`;
   if (card.type === "weapon") return `攻撃 ${card.attack || 0}${card.effect === "multi_hit" ? `×${card.hitCount || 2}` : ""}${chance}`;
   if (isDefenseCard(card)) return `防御 ${card.defense || 0}`;
   if (isHealingCard(card)) return `回復 ${card.heal || card.effectPower || 0}`;
@@ -559,7 +569,7 @@ els.enemyPanel?.addEventListener("click", () => {
 });
 
 els.playerPanel?.addEventListener("click", () => {
-  if (["target", "utility_target"].includes(game.phase) && !game.busy) {
+  if (game.phase === "utility_target" && !game.busy) {
     chooseActionTarget(game, "player");
     renderGame();
   }

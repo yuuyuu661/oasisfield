@@ -379,7 +379,16 @@ button:disabled {
   font-size: 22px;
   color: #e11d48;
   font-weight: 1000;
+  transition: color .2s ease, text-shadow .2s ease;
 }
+
+.damage-view[data-element="none"] { color: #e11d48; }
+.damage-view[data-element="fire"] { color: #ef2f24; text-shadow: 0 0 12px rgba(255, 92, 28, .55); }
+.damage-view[data-element="water"] { color: #1677ff; text-shadow: 0 0 12px rgba(22, 119, 255, .42); }
+.damage-view[data-element="wood"] { color: #15803d; text-shadow: 0 0 12px rgba(34, 197, 94, .4); }
+.damage-view[data-element="earth"] { color: #9a5b16; text-shadow: 0 0 12px rgba(180, 112, 32, .42); }
+.damage-view[data-element="light"] { color: #d59b00; text-shadow: 0 0 12px rgba(255, 224, 74, .7); }
+.damage-view[data-element="dark"] { color: #7c3aed; text-shadow: 0 0 12px rgba(124, 58, 237, .5); }
 
 .damage-view.pop {
   animation: pop .5s ease;

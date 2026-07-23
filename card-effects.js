@@ -23,6 +23,7 @@ const CARD_EFFECTS = {
     ["element_change", "攻撃属性を変更"]
   ],
   enchant: [
+    ["add_attack", "武器に重ねる追加攻撃"],
     ["defense", "防御"],
     ["attack_defense", "攻撃と防御"],
     ["reflect_normal", "無属性攻撃を反射"],

@@ -43,7 +43,7 @@ function saveOverrides(overrides) {
 
 function standardCardsWithOverrides() {
   const overrides = loadOverrides();
-  return (typeof OASIS_CATALOG_CARDS !== "undefined" ? OASIS_CATALOG_CARDS : [])
+  return (window.OASIS_CATALOG_CARDS || [])
     .map(card => ({ ...card, ...(overrides[card.id] || {}) }));
 }
 
@@ -120,7 +120,7 @@ form.addEventListener("submit", async event => {
   const cards = loadCards();
   const editUid = document.getElementById("editUid").value;
   const id = editUid || `custom_${Date.now()}`;
-  const standardBase = (typeof OASIS_CATALOG_CARDS !== "undefined" ? OASIS_CATALOG_CARDS : []).find(card => card.id === id);
+  const standardBase = (window.OASIS_CATALOG_CARDS || []).find(card => card.id === id);
   const oldCard = cards.find(card => card.id === id)
     || (standardBase ? { ...standardBase, ...(loadOverrides()[id] || {}) } : null);
 
@@ -217,54 +217,42 @@ async function resolveImage(card) {
 
 async function renderList() {
   const filter = catalogFilter?.value || "all";
-  const cards = loadCards().filter(card => filter === "all" || card.type === filter);
   const allStandardCards = standardCardsWithOverrides();
-  const standardCards = allStandardCards.filter(card => filter === "all" || card.type === filter);
-  const rows = await Promise.all(cards.map(async card => {
+  const customCards = loadCards();
+  const registeredCards = [
+    ...allStandardCards.map(card => ({ ...card, isStandard: true })),
+    ...customCards.map(card => ({ ...card, isStandard: false }))
+  ].filter(card => filter === "all" || (card.type === "armor" ? "enchant" : card.type) === filter);
+
+  const rows = await Promise.all(registeredCards.map(async card => {
     const image = await resolveImage(card);
     return `
-      <div class="admin-card">
+      <div class="admin-card ${card.isStandard ? "standard-card" : ""}">
         <div class="admin-card-image">
-          ${image ? `<img src="${image}" alt="${escapeHtml(card.name)}">` : "🃏"}
+          ${image ? `<img src="${image}" alt="${escapeHtml(card.name)}" loading="lazy">` : "🃏"}
         </div>
         <div class="admin-card-body">
-          <strong>${escapeHtml(card.name)}</strong>
+          <strong>${escapeHtml(card.name)} <small>${card.isStandard ? "標準" : "追加"}</small></strong>
           <span>${cardTypeLabel(card.type)} / ${cardEffectLabel(card.type, card.effect)}</span>
-          <span>攻撃${card.attack || 0} / 防御${card.defense || 0} / 価格￥${card.price || 0} / 授かり率${card.drawRate ?? 0.2}%</span>
+          <span>攻撃${card.attack || 0} / 防御${card.defense || 0} / 価格￥${card.price || 0}</span>
           <p>${escapeHtml(card.desc || "")}</p>
         </div>
         <div class="admin-card-actions">
           <button onclick="editCard('${card.id}')">編集</button>
-          <button onclick="deleteCard('${card.id}')">削除</button>
+          ${card.isStandard
+            ? `<button class="reset-card-btn" onclick="resetStandardCard('${card.id}')">初期値に戻す</button>`
+            : `<button onclick="deleteCard('${card.id}')">削除</button>`}
         </div>
       </div>`;
   }));
-  const standardRows = await Promise.all(standardCards.map(async card => {
-    const image = await resolveImage(card);
-    return `
-    <div class="admin-card standard-card">
-      <div class="admin-card-image">
-        ${image ? `<img src="${image}" alt="${escapeHtml(card.name)}" loading="lazy">` : "🃏"}
-      </div>
-      <div class="admin-card-body">
-        <strong>${escapeHtml(card.name)}</strong>
-        <span>${cardTypeLabel(card.type)} / ${cardEffectLabel(card.type, card.effect)}</span>
-        <span>攻撃${card.attack || 0} / 防御${card.defense || 0} / 価格￥${card.price || 0} / 授かり率${card.drawRate ?? 0.2}%</span>
-        <p>${escapeHtml(card.desc || "")}</p>
-      </div>
-      <div class="admin-card-actions">
-        <button onclick="editCard('${card.id}')">編集</button>
-        <button class="reset-card-btn" onclick="resetStandardCard('${card.id}')">初期値に戻す</button>
-      </div>
-    </div>`;
-  }));
 
   list.innerHTML = `
-    <div class="catalog-summary">標準カード <strong>${allStandardCards.length}</strong>枚 / 追加カード <strong>${loadCards().length}</strong>枚</div>
-    <h3 class="catalog-heading">追加・編集カード</h3>
-    ${rows.length ? rows.join("") : '<div class="admin-empty">追加カードはまだありません。</div>'}
-    <h3 class="catalog-heading">標準カードカタログ</h3>
-    ${standardRows.join("")}`;
+    <div class="catalog-summary">
+      表示中 <strong>${registeredCards.length}</strong>枚 /
+      標準 <strong>${allStandardCards.length}</strong>枚 /
+      追加 <strong>${customCards.length}</strong>枚
+    </div>
+    ${rows.length ? rows.join("") : '<div class="admin-empty">この種類の登録カードはありません。</div>'}`;
 }
 
 async function editCard(id) {

@@ -17,7 +17,7 @@ function cpuTakeAttackAction(game) {
   }
 
   const weapons = cpu.hand
-    .filter(card => card.type === "weapon")
+    .filter(card => card.type === "weapon" && !isAdditionalAttackCard(card))
     .sort((a, b) => (b.attack || 0) - (a.attack || 0));
 
   if (weapons.length === 0) {
@@ -36,13 +36,15 @@ function cpuTakeAttackAction(game) {
   }
 
   const chosen = weapons[0];
+  const enhancements = cpu.hand.filter(card => isAdditionalAttackCard(card));
 
   game.busy = false;
   game.selectedAttackUid = chosen.uid;
   game.selectedAttackCard = chosen;
+  game.selectedAttackEnhancementUids = enhancements.map(card => card.uid);
   game.focusedCard = chosen;
   game.phase = "target";
-  game.logs.unshift(`CPUは「${chosen.name}」を選択しました。`);
+  game.logs.unshift(`CPUは「${chosen.name}」${enhancements.length ? `と追加攻撃${enhancements.length}枚` : ""}を選択しました。`);
   window.renderGame();
 
   setTimeout(() => {

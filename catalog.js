@@ -430,3 +430,8 @@ const OASIS_CATALOG_COUNTS = OASIS_CATALOG_CARDS.reduce((counts, card) => {
   counts[card.catalogGroup] = (counts[card.catalogGroup] || 0) + 1;
   return counts;
 }, {});
+
+if (typeof window !== "undefined") {
+  window.OASIS_CATALOG_CARDS = OASIS_CATALOG_CARDS;
+  window.OASIS_CATALOG_COUNTS = OASIS_CATALOG_COUNTS;
+}

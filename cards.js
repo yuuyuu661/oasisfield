@@ -213,11 +213,15 @@ function createDeck() {
   return getCardMaster().map(card => ({ ...card, uid: makeUid() }));
 }
 
+function isAdditionalAttackCard(card) {
+  return Boolean(card) && card.effect === "add_attack";
+}
+
 function isDefenseCard(card) {
   return card && (
     card.type === "armor" ||
     card.type === "enchant"
-  );
+  ) && !isAdditionalAttackCard(card);
 }
 
 function isHealingCard(card) {
