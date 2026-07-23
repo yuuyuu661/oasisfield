@@ -9,6 +9,49 @@ const OASIS_NAME_RULES = [
   ["守護", "精霊"], ["ゴースト", "幽玄"], ["マジカル", "魔導"]
 ];
 
+const OASIS_CATALOG_STATUS_LABELS = {
+  none: "なし",
+  cold: "風邪",
+  fever: "熱病",
+  fog: "霧",
+  flash: "閃光",
+  dream: "夢",
+  dark_cloud: "暗雲",
+  hell: "地獄病",
+  heaven: "天国病",
+  all: "すべての災い"
+};
+
+const OASIS_CATALOG_EFFECT_LABELS = {
+  attack: "通常攻撃",
+  add_attack: "追加攻撃",
+  all_attack: "全体攻撃",
+  multi_hit: "複数回攻撃",
+  hp_drain: "HP吸収",
+  inflict_status: "災い付与",
+  defense: "防御",
+  attack_defense: "攻撃・防御",
+  magic_attack: "単体魔法攻撃",
+  magic_all_attack: "全体魔法攻撃",
+  heal_hp: "HP回復",
+  heal_mp: "MP回復",
+  cure_status: "災い解除",
+  summon_guardian: "守護神召喚",
+  random_event: "超常現象",
+  sell: "売却",
+  buy: "購入",
+  exchange: "両替",
+  custom: "特殊効果"
+};
+
+function oasisCatalogStatusLabel(status) {
+  return OASIS_CATALOG_STATUS_LABELS[status] || "災い";
+}
+
+function oasisCatalogEffectLabel(effect) {
+  return OASIS_CATALOG_EFFECT_LABELS[effect] || effect || "特殊効果";
+}
+
 function oasisCardName(sourceName) {
   let result = sourceName;
   OASIS_NAME_RULES.forEach(([from, to]) => { result = result.replace(from, to); });
@@ -275,6 +318,10 @@ const OASIS_CATALOG_CARDS = [
   ...OASIS_ITEMS
 ];
 
+if (typeof globalThis !== "undefined") {
+  globalThis.OASIS_CATALOG_CARDS = OASIS_CATALOG_CARDS;
+}
+
 const OASIS_PRICE_OVERRIDES = {
   "銅のこん棒": 1, "銀のこん棒": 10, "金のこん棒": 25, "ムチ": 1, "セイバーロッド": 10,
   "パンチ": 1, "のこぶんぶん": 10, "ハチェット": 2, "とげベルト": 3, "鎖ガマ": 2,
@@ -401,8 +448,8 @@ function catalogDescription(card) {
       : `${chanceText}${card.isAllAttack ? "全体攻撃" : "攻撃"}${card.attack}`;
     if (card.effect === "multi_hit") return `攻撃${card.attack}を${card.hitCount || 2}回行う。`;
     if (card.effect === "hp_drain") return `${attackText}。与えたダメージ分だけHPを回復する。`;
-    if (card.effect === "inflict_status") return `${attackText}。1ダメージ以上与えた時、対象に${STATUS_EFFECTS[card.statusEffect] || "災い"}を与える。`;
-    if (card.statusEffect && card.statusEffect !== "none") return `${attackText}。1ダメージ以上与えた時、対象に${STATUS_EFFECTS[card.statusEffect] || "災い"}を与える。`;
+    if (card.effect === "inflict_status") return `${attackText}。1ダメージ以上与えた時、対象に${oasisCatalogStatusLabel(card.statusEffect)}を与える。`;
+    if (card.statusEffect && card.statusEffect !== "none") return `${attackText}。1ダメージ以上与えた時、対象に${oasisCatalogStatusLabel(card.statusEffect)}を与える。`;
     return `${attackText}${card.defense ? `、防御${card.defense}` : ""}。`;
   }
   if (card.type === "enchant") {
@@ -416,11 +463,11 @@ function catalogDescription(card) {
     }
     if (card.effect === "inflict_status") {
       const attack = card.attack ? `${chanceText}攻撃${card.attack}。命中した時、` : "";
-      return `MP${card.mpCost}。${attack}対象に${STATUS_EFFECTS[card.statusEffect] || "災い"}を与える。`;
+      return `MP${card.mpCost}。${attack}対象に${oasisCatalogStatusLabel(card.statusEffect)}を与える。`;
     }
     if (card.effect === "cure_status") return `MP${card.mpCost}。${card.statusEffect === "all" ? "すべての災い" : "指定された災い"}を消す。`;
     if (card.effect === "heal_hp") return `MP${card.mpCost}。対象のHPを${card.effectPower || card.heal}回復する。`;
-    return `MP${card.mpCost}。${cardEffectLabel(card.type, card.effect)}。`;
+    return `MP${card.mpCost}。${oasisCatalogEffectLabel(card.effect)}。`;
   }
   if (card.effect === "heal_hp") return `対象のHPを${card.effectPower || card.heal}回復する。`;
   if (card.effect === "heal_mp") return `対象のMPを${card.effectPower}回復する。`;
@@ -430,7 +477,7 @@ function catalogDescription(card) {
   if (card.effect === "boost_attack") return `対象の次の攻撃を+${card.effectPower}する。`;
   if (card.effect === "mp_free_magic") return "対象が次に使う奇跡のMP消費を0にする。";
   if (card.effect === "self_damage") return `使用者に${card.effectPower}ダメージを与える。`;
-  return `${cardEffectLabel(card.type, card.effect)}。`;
+  return `${oasisCatalogEffectLabel(card.effect)}。`;
 }
 
 OASIS_CATALOG_CARDS.forEach(card => {
@@ -449,7 +496,7 @@ const OASIS_CATALOG_COUNTS = OASIS_CATALOG_CARDS.reduce((counts, card) => {
   return counts;
 }, {});
 
-if (typeof window !== "undefined") {
-  window.OASIS_CATALOG_CARDS = OASIS_CATALOG_CARDS;
-  window.OASIS_CATALOG_COUNTS = OASIS_CATALOG_COUNTS;
+if (typeof globalThis !== "undefined") {
+  globalThis.OASIS_CATALOG_CARDS = OASIS_CATALOG_CARDS;
+  globalThis.OASIS_CATALOG_COUNTS = OASIS_CATALOG_COUNTS;
 }

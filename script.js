@@ -1,5 +1,27 @@
 let game = null;
 
+function ensureCompactPlayerPanel(prefix, name) {
+  if (document.getElementById(`${prefix}Effects`)) return;
+  const panel = document.getElementById(`${prefix}Panel`);
+  if (!panel) return;
+  panel.innerHTML = `
+    <div class="player-status-row">
+      <strong>${name}</strong>
+      <div class="player-resources">
+        <b id="${prefix}HpText">HP 40</b>
+        <span id="${prefix}MpText">MP 10</span>
+        <span id="${prefix}GoldText">￥ 20</span>
+      </div>
+    </div>
+    <div id="${prefix}Effects" class="player-effects hidden">
+      <span id="${prefix}StatusText" class="status-text hidden"></span>
+      <div id="${prefix}Guardian" class="guardian-badge hidden"></div>
+    </div>`;
+}
+
+ensureCompactPlayerPanel("enemy", "CPU");
+ensureCompactPlayerPanel("player", "あなた");
+
 const els = {
   restartBtn: document.getElementById("restartBtn"),
   prayBtn: document.getElementById("prayBtn"),
@@ -32,10 +54,8 @@ const els = {
   enemyGoldText: document.getElementById("enemyGoldText"),
   playerStatusText: document.getElementById("playerStatusText"),
   enemyStatusText: document.getElementById("enemyStatusText"),
-  playerPhaseText: document.getElementById("playerPhaseText"),
-  enemyPhaseText: document.getElementById("enemyPhaseText"),
-  playerHandCount: document.getElementById("playerHandCount"),
-  enemyHandCount: document.getElementById("enemyHandCount"),
+  playerEffects: document.getElementById("playerEffects"),
+  enemyEffects: document.getElementById("enemyEffects"),
   playerGuardian: document.getElementById("playerGuardian"),
   enemyGuardian: document.getElementById("enemyGuardian"),
   handHelp: document.getElementById("handHelp"),
@@ -63,22 +83,35 @@ function renderHp() {
   els.enemyHpText.textContent = enemyHidden ? "HP ??" : `HP ${game.enemy.hp}`;
   els.playerMpText.textContent = `MP ${game.player.mp}`;
   els.enemyMpText.textContent = enemyHidden ? "MP ??" : `MP ${game.enemy.mp}`;
-  els.playerGoldText.textContent = `￥${game.player.gold}`;
-  els.enemyGoldText.textContent = enemyHidden ? "￥??" : `￥${game.enemy.gold}`;
-  els.playerStatusText.textContent = statusText(game.player);
-  els.enemyStatusText.textContent = enemyHidden ? "不明" : statusText(game.enemy);
-  els.playerHandCount.textContent = `手札 ${game.player.hand.length}`;
-  els.enemyHandCount.textContent = `手札 ${game.enemy.hand.length}`;
+  els.playerGoldText.textContent = `￥ ${game.player.gold}`;
+  els.enemyGoldText.textContent = enemyHidden ? "￥ ??" : `￥ ${game.enemy.gold}`;
+  renderStatus(els.playerStatusText, game.player, false);
+  renderStatus(els.enemyStatusText, game.enemy, enemyHidden);
   renderGuardianBadge(els.playerGuardian, game.player.guardian);
   renderGuardianBadge(els.enemyGuardian, game.enemy.guardian);
+  updateEffectsVisibility(els.playerEffects);
+  updateEffectsVisibility(els.enemyEffects);
+}
+
+function renderStatus(element, player, hidden) {
+  const hasStatus = hidden || (player.statuses && player.statuses.length > 0);
+  element.textContent = hidden ? "状態：不明" : hasStatus ? `状態：${statusText(player)}` : "";
+  element.classList.toggle("hidden", !hasStatus);
 }
 
 function renderGuardianBadge(element, guardian) {
   if (!element) return;
   element.innerHTML = guardian
-    ? `<img src="${guardian.image}" alt="${guardian.name}"><span>${guardian.name}</span>`
-    : "守護神なし";
+    ? `<img src="${guardian.image}" alt="${guardian.name}"><span>守護神：${guardian.name}</span>`
+    : "";
   element.classList.toggle("active", Boolean(guardian));
+  element.classList.toggle("hidden", !guardian);
+}
+
+function updateEffectsVisibility(element) {
+  if (!element) return;
+  const hasVisibleEffect = [...element.children].some(child => !child.classList.contains("hidden"));
+  element.classList.toggle("hidden", !hasVisibleEffect);
 }
 
 function statusText(player) {
@@ -134,9 +167,6 @@ function renderPhase() {
     els.battleMessage.textContent = "効果を処理しています。";
   }
 
-  els.playerPhaseText.textContent = getPlayerPhaseText("player");
-  els.enemyPhaseText.textContent = getPlayerPhaseText("enemy");
-
   const canAttack = game.phase === "attack" && game.turn === "player" && !game.winner && !game.busy;
   const canDefense = game.phase === "defense" && game.defenderId === "player" && !game.winner && !game.busy;
   const needsTarget = ["target", "utility_target", "sell_target", "buy_target"].includes(game.phase) && !game.busy;
@@ -156,16 +186,6 @@ function renderPhase() {
   els.hitResult.classList.toggle("hit", Boolean(game.hitResult?.hit));
   els.hitResult.classList.toggle("miss", game.hitResult?.hit === false);
   els.hitResult.textContent = game.hitResult?.text || "";
-}
-
-function getPlayerPhaseText(id) {
-  if (game.winner) return "終了";
-  if (game.phase === "attack" && game.attackerId === id) return "攻撃中";
-  if (game.phase === "target" && game.attackerId === id) return "対象選択中";
-  if (["utility_target", "sell_card", "sell_target", "buy_target", "buy_offer", "exchange"].includes(game.phase) && game.attackerId === id) return "行動選択中";
-  if (game.phase === "defense" && game.defenderId === id) return "防御中";
-  if (game.phase === "resolving") return "解決中";
-  return "待機中";
 }
 
 function currentBattle() {

@@ -7,7 +7,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="stylesheet" href="style.css?v=9.3.0">
+  <link rel="stylesheet" href="style.css?v=9.4.0">
 </head>
 <body>
 
@@ -70,29 +70,33 @@
       <div class="panel-title">プレイヤーリスト</div>
 
       <div id="enemyPanel" class="player-card targetable">
-        <div class="player-card-top">
+        <div class="player-status-row">
           <strong>CPU</strong>
-          <span id="enemyPhaseText">待機中</span>
+          <div class="player-resources">
+            <b id="enemyHpText">HP 40</b>
+            <span id="enemyMpText">MP 10</span>
+            <span id="enemyGoldText">￥ 20</span>
+          </div>
         </div>
-        <div class="hp-line">
-          <b id="enemyHpText">HP 40</b>
+        <div id="enemyEffects" class="player-effects hidden">
+          <span id="enemyStatusText" class="status-text hidden"></span>
+          <div id="enemyGuardian" class="guardian-badge hidden"></div>
         </div>
-        <div class="resource-line"><span id="enemyMpText">MP 10</span><span id="enemyGoldText">￥20</span><span id="enemyStatusText">正常</span></div>
-        <div id="enemyHandCount" class="hand-count">手札 9</div>
-        <div id="enemyGuardian" class="guardian-badge">守護神なし</div>
       </div>
 
       <div id="playerPanel" class="player-card me targetable">
-        <div class="player-card-top">
+        <div class="player-status-row">
           <strong>あなた</strong>
-          <span id="playerPhaseText">行動可能</span>
+          <div class="player-resources">
+            <b id="playerHpText">HP 40</b>
+            <span id="playerMpText">MP 10</span>
+            <span id="playerGoldText">￥ 20</span>
+          </div>
         </div>
-        <div class="hp-line">
-          <b id="playerHpText">HP 40</b>
+        <div id="playerEffects" class="player-effects hidden">
+          <span id="playerStatusText" class="status-text hidden"></span>
+          <div id="playerGuardian" class="guardian-badge hidden"></div>
         </div>
-        <div class="resource-line"><span id="playerMpText">MP 10</span><span id="playerGoldText">￥20</span><span id="playerStatusText">正常</span></div>
-        <div id="playerHandCount" class="hand-count">手札 9</div>
-        <div id="playerGuardian" class="guardian-badge">守護神なし</div>
       </div>
     </section>
 
@@ -121,13 +125,13 @@
   </main>
 </div>
 
-<script src="card-effects.js?v=9.3.0"></script>
-<script src="card-storage.js?v=9.3.0"></script>
-<script src="catalog.js?v=9.3.0"></script>
-<script src="cards.js?v=9.3.0"></script>
-<script src="guardians.js?v=9.3.0"></script>
-<script src="engine.js?v=9.3.0"></script>
-<script src="cpu.js?v=9.3.0"></script>
-<script src="script.js?v=9.3.0"></script>
+<script src="card-effects.js?v=9.4.0"></script>
+<script src="card-storage.js?v=9.4.0"></script>
+<script src="catalog.js?v=9.4.0"></script>
+<script src="cards.js?v=9.4.0"></script>
+<script src="guardians.js?v=9.4.0"></script>
+<script src="engine.js?v=9.4.0"></script>
+<script src="cpu.js?v=9.4.0"></script>
+<script src="script.js?v=9.4.0"></script>
 </body>
 </html>

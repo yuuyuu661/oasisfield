@@ -13,6 +13,8 @@ const statusEffectInput = document.getElementById("statusEffect");
 const statusHelp = document.getElementById("statusHelp");
 const catalogFilter = document.getElementById("catalogFilter");
 const catalogSearch = document.getElementById("catalogSearch");
+const catalogTitle = document.getElementById("catalogTitle")
+  || document.querySelector?.(".admin-list .panel-title");
 
 let selectedImageFile = null;
 let currentImageUrl = "";
@@ -43,7 +45,7 @@ function saveOverrides(overrides) {
 }
 
 function getBuiltInCatalog() {
-  if (Array.isArray(window.OASIS_CATALOG_CARDS)) return window.OASIS_CATALOG_CARDS;
+  if (Array.isArray(globalThis.OASIS_CATALOG_CARDS)) return globalThis.OASIS_CATALOG_CARDS;
   if (typeof OASIS_CATALOG_CARDS !== "undefined" && Array.isArray(OASIS_CATALOG_CARDS)) {
     return OASIS_CATALOG_CARDS;
   }
@@ -55,6 +57,8 @@ function standardCardsWithOverrides() {
   return getBuiltInCatalog()
     .map(card => ({ ...card, ...(overrides[card.id] || {}) }));
 }
+
+if (catalogTitle) catalogTitle.textContent = "実装カード一覧";
 
 function fillSelect(select, values) {
   select.innerHTML = Object.entries(values)
@@ -346,3 +350,6 @@ renderEffectOptions();
 renderList();
 catalogFilter?.addEventListener("change", renderList);
 catalogSearch?.addEventListener("input", renderList);
+window.addEventListener("pageshow", event => {
+  if (event.persisted) renderList();
+});

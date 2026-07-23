@@ -424,47 +424,55 @@ button:disabled {
   background: rgba(255,255,255,.68);
 }
 
-.player-card-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.player-card-top span {
-  font-size: 12px;
-  font-weight: 900;
-  background: rgba(6,59,44,.1);
-  border-radius: 999px;
-  padding: 4px 7px;
-}
-
-.hp-line {
+.player-status-row {
   display: flex;
   align-items: center;
-  min-height: 28px;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-.hp-line b {
-  display: inline-block;
-  min-width: 96px;
-  border-radius: 7px;
-  padding: 4px 8px;
-  background: #fff;
-  color: #d92f50;
-  border: 1px solid rgba(0,130,96,.2);
+.player-status-row > strong {
+  min-width: 74px;
+  color: #0b5fc0;
+  font-size: 20px;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-resources {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 900;
+  color: #667b78;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-.hand-count {
+.player-resources b {
+  color: #d92f50;
+}
+
+.player-effects {
+  display: grid;
+  gap: 4px;
   margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(0,130,96,.18);
+}
+
+.status-text {
+  color: #a9233f;
+  font-size: 12px;
   font-weight: 900;
-  font-size: 13px;
 }
 
 .guardian-badge {
-  min-height: 28px;
-  margin-top: 7px;
+  min-height: 25px;
   padding: 5px 7px;
   border-radius: 10px;
   background: rgba(255,255,255,.35);
@@ -486,16 +494,6 @@ button:disabled {
   height: 30px;
   border-radius: 50%;
   object-fit: cover;
-}
-
-.resource-line {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  margin-top: 7px;
-  color: #0f766e;
-  font-size: 12px;
-  font-weight: 900;
 }
 
 .hand-header {
@@ -1048,6 +1046,7 @@ button:disabled {
   }
 
   .players-panel {
+    grid-template-columns: 1fr;
     padding: 5px;
     gap: 5px;
   }
@@ -1057,34 +1056,29 @@ button:disabled {
     font-size: 12px;
   }
 
-  .player-card-top {
-    margin-bottom: 3px;
+  .player-status-row {
+    display: flex;
+    gap: 7px;
   }
 
-  .player-card-top span {
-    padding: 2px 5px;
-    font-size: 10px;
+  .player-status-row > strong {
+    min-width: 68px;
+    font-size: 16px;
   }
 
-  .hp-line {
-    min-height: 23px;
+  .player-resources {
+    justify-content: flex-end;
+    gap: 7px;
+    font-size: 11px;
   }
 
-  .hp-line b {
-    min-width: 0;
-    padding: 2px 5px;
+  .player-effects {
+    margin-top: 5px;
+    padding-top: 4px;
   }
 
-  .resource-line {
-    justify-content: flex-start;
-    flex-wrap: wrap;
-    margin-top: 3px;
-    font-size: 10px;
-  }
-
-  .hand-count,
+  .status-text,
   .guardian-badge {
-    margin-top: 3px;
     font-size: 10px;
   }
 
