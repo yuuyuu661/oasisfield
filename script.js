@@ -33,6 +33,8 @@ const els = {
   enemyPhaseText: document.getElementById("enemyPhaseText"),
   playerHandCount: document.getElementById("playerHandCount"),
   enemyHandCount: document.getElementById("enemyHandCount"),
+  playerGuardian: document.getElementById("playerGuardian"),
+  enemyGuardian: document.getElementById("enemyGuardian"),
 
 
   deckCount: document.getElementById("deckCount"),
@@ -70,6 +72,16 @@ function renderHp() {
   els.enemyStatusText.textContent = enemyHidden ? "不明" : statusText(game.enemy);
   els.playerHandCount.textContent = `手札 ${game.player.hand.length}`;
   els.enemyHandCount.textContent = `手札 ${game.enemy.hand.length}`;
+  renderGuardianBadge(els.playerGuardian, game.player.guardian);
+  renderGuardianBadge(els.enemyGuardian, game.enemy.guardian);
+}
+
+function renderGuardianBadge(element, guardian) {
+  if (!element) return;
+  element.innerHTML = guardian
+    ? `<img src="${guardian.image}" alt="${guardian.name}"><span>${guardian.name}</span>`
+    : "守護神なし";
+  element.classList.toggle("active", Boolean(guardian));
 }
 
 function statusText(player) {

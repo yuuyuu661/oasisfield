@@ -14,6 +14,7 @@ const CARD_EFFECTS = {
     ["hp_drain", "与えたダメージをHP吸収"],
     ["self_damage", "自分にもダメージ"],
     ["inflict_status", "ダメージ時に災いを付与"],
+    ["instant_defeat", "命中時に一撃で倒す"],
     ["reflect_normal", "無属性攻撃を反射"],
     ["reflect_magic", "魔法を反射"],
     ["nullify_magic", "魔法を止める"],
@@ -30,7 +31,8 @@ const CARD_EFFECTS = {
     ["magic_defense", "魔法防御"],
     ["evade", "確率で回避"],
     ["mp_free_magic", "MP消費なしで魔法を使用"],
-    ["on_defeat_heal", "HP0時に回復"]
+    ["on_defeat_heal", "HP0時に回復"],
+    ["counter_attack", "攻撃者へ反撃"]
   ],
   magic: [
     ["magic_attack", "単体魔法攻撃"],
@@ -60,6 +62,7 @@ const CARD_EFFECTS = {
     ["discard", "カードを捨てさせる"],
     ["forget_magic", "習得魔法を忘れさせる"],
     ["revive", "HP0時に復活"],
+    ["self_damage", "自分にダメージ"],
     ["trade", "取引"],
     ["custom", "自由設定"]
   ]

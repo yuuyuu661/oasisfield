@@ -1,4 +1,4 @@
-const DEFAULT_CARDS = [
+const LEGACY_DEFAULT_CARDS = [
   {
     id: "azure_edge",
     name: "蒼片の刃",
@@ -123,6 +123,10 @@ const DEFAULT_CARDS = [
   }
 ];
 
+const DEFAULT_CARDS = typeof OASIS_CATALOG_CARDS !== "undefined"
+  ? OASIS_CATALOG_CARDS
+  : LEGACY_DEFAULT_CARDS;
+
 let registeredCardsCache = null;
 
 function loadRegisteredCards() {
@@ -176,7 +180,7 @@ function createDeck() {
 function isDefenseCard(card) {
   return card && (
     card.type === "armor" ||
-    (card.type === "enchant" && (card.effect === "defense" || card.effect === "attack_defense" || (card.defense || 0) > 0))
+    card.type === "enchant"
   );
 }
 

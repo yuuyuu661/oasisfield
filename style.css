@@ -356,6 +356,32 @@ button:disabled {
   font-size: 13px;
 }
 
+.guardian-badge {
+  min-height: 28px;
+  margin-top: 7px;
+  padding: 5px 7px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.35);
+  color: #315b4f;
+  font-size: 12px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.guardian-badge.active {
+  background: rgba(255, 211, 77, .36);
+  color: #163f32;
+}
+
+.guardian-badge img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
 .resource-line {
   display: flex;
   justify-content: space-between;
@@ -684,6 +710,29 @@ button:disabled {
 .admin-empty {
   font-weight: 1000;
   padding: 20px;
+}
+
+.catalog-summary {
+  position: sticky;
+  top: 8px;
+  z-index: 2;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  background: rgba(255, 244, 173, .94);
+  color: #173f32;
+  font-weight: 900;
+  box-shadow: 0 5px 14px rgba(0,0,0,.1);
+}
+
+.catalog-heading {
+  margin: 18px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid rgba(6,59,44,.16);
+}
+
+.standard-card .admin-card-body p {
+  margin: 2px 0 0;
 }
 
 @media (max-width: 1050px) {

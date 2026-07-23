@@ -181,11 +181,7 @@ async function resolveImage(card) {
 
 async function renderList() {
   const cards = loadCards();
-  if (cards.length === 0) {
-    list.innerHTML = `<div class="admin-empty">まだ登録カードがありません。</div>`;
-    return;
-  }
-
+  const standardCards = typeof OASIS_CATALOG_CARDS !== "undefined" ? OASIS_CATALOG_CARDS : [];
   const rows = await Promise.all(cards.map(async card => {
     const image = await resolveImage(card);
     return `
@@ -205,7 +201,25 @@ async function renderList() {
         </div>
       </div>`;
   }));
-  list.innerHTML = rows.join("");
+  const standardRows = standardCards.map(card => `
+    <div class="admin-card standard-card">
+      <div class="admin-card-image">
+        <img src="${card.image}" alt="${escapeHtml(card.name)}" loading="lazy">
+      </div>
+      <div class="admin-card-body">
+        <strong>${escapeHtml(card.name)}</strong>
+        <span>${cardTypeLabel(card.type)} / ${cardEffectLabel(card.type, card.effect)}</span>
+        <span>攻撃${card.attack || 0} / 防御${card.defense || 0} / 回復${card.heal || 0} / 効果量${card.effectPower || 0}</span>
+        <p>${escapeHtml(card.desc || "")}</p>
+      </div>
+    </div>`);
+
+  list.innerHTML = `
+    <div class="catalog-summary">標準カード <strong>${standardCards.length}</strong>枚 / 追加カード <strong>${cards.length}</strong>枚</div>
+    <h3 class="catalog-heading">追加・編集カード</h3>
+    ${rows.length ? rows.join("") : '<div class="admin-empty">追加カードはまだありません。</div>'}
+    <h3 class="catalog-heading">標準カードカタログ</h3>
+    ${standardRows.join("")}`;
 }
 
 async function editCard(id) {

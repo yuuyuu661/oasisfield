@@ -12,6 +12,9 @@ function createPlayer(name, isCpu = false) {
     mp: 20,
     maxMp: 20,
     attackBoost: 0,
+    guardian: null,
+    freeMagicUses: 0,
+    revivePower: 0,
     statuses: [],
     hand: [],
     selectedDefense: []
@@ -192,6 +195,18 @@ function useUtilityAndEndTurn(game, uid) {
   const used = removeCardFromHand(actor, uid);
   if (!used) return;
 
+  if (used.type === "magic") {
+    const usesFreeMagic = actor.freeMagicUses > 0;
+    const cost = usesFreeMagic ? 0 : (used.mpCost || 0);
+    if (actor.mp < cost) {
+      actor.hand.push(used);
+      game.logs.unshift(`MPが${cost}必要です。`);
+      return;
+    }
+    actor.mp -= cost;
+    if (usesFreeMagic) actor.freeMagicUses -= 1;
+  }
+
   const target = actor === game.player ? game.enemy : game.player;
   const amount = used.effectPower || used.heal || used.attack || 0;
   let resultText = cardEffectLabel(used.type, used.effect);
@@ -212,23 +227,19 @@ function useUtilityAndEndTurn(game, uid) {
   } else if (used.effect === "cure_status") {
     actor.statuses = used.statusEffect === "all"
       ? []
-      : actor.statuses.filter(status => status !== used.statusEffect);
+      : actor.statuses.filter(status => !(used.cureStatuses?.length ? used.cureStatuses : [used.statusEffect]).includes(status));
     resultText = "災いを解除";
   } else if (used.effect === "inflict_status") {
     const chance = (used.effectChance ?? 100) / 100;
     const applied = Math.random() <= chance && applyStatusEffect(game, target, used.statusEffect);
+    if ((used.attack || 0) > 0) target.hp = Math.max(0, target.hp - used.attack);
     resultText = applied
       ? `${STATUS_EFFECTS[used.statusEffect] || "災い"}を付与`
       : "災いの付与に失敗";
   } else if (["magic_attack", "magic_all_attack", "hp_drain"].includes(used.effect)) {
-    const cost = used.mpCost || 0;
-    if (actor.mp < cost) {
-      actor.hand.push(used);
-      game.logs.unshift(`MPが${cost}必要です。`);
-      return;
-    }
-    actor.mp -= cost;
-    const damage = Math.max(0, amount);
+    const canMiss = used.effect === "magic_all_attack" && (used.effectChance ?? 100) < 100;
+    const hit = !canMiss || target.statuses.includes("dark_cloud") || Math.random() <= ((used.effectChance ?? 100) / 100);
+    const damage = hit ? Math.max(0, amount) : 0;
     target.hp = Math.max(0, target.hp - damage);
     if (used.effect === "hp_drain") healPlayer(game, actor, damage);
     resultText = `${damage}ダメージ`;
@@ -240,6 +251,34 @@ function useUtilityAndEndTurn(game, uid) {
       actor.hp = Math.max(0, actor.hp - amount);
       resultText = `自分に${amount}ダメージ`;
     }
+  } else if (used.effect === "summon_guardian") {
+    const guardian = summonRandomGuardian(game, actor);
+    resultText = guardian ? `${guardian.name}を召喚` : "守護神を召喚できない";
+  } else if (used.effect === "self_damage") {
+    actor.hp = Math.max(0, actor.hp - amount);
+    resultText = `自分に${amount}ダメージ`;
+  } else if (used.effect === "discard") {
+    const discardCount = Math.min(target.hand.length, Math.max(1, amount));
+    for (let i = 0; i < discardCount; i++) {
+      const removed = target.hand.splice(Math.floor(Math.random() * target.hand.length), 1)[0];
+      if (removed) game.discard.push(removed);
+    }
+    resultText = `${discardCount}枚を捨て札へ`;
+  } else if (used.effect === "random_event") {
+    if (Math.random() < 0.5) healPlayer(game, actor, amount || 10);
+    else actor.mp = Math.min(actor.maxMp, actor.mp + (amount || 10));
+    resultText = "ランダムな恵みが発生";
+  } else if (used.effect === "mp_free_magic") {
+    actor.freeMagicUses += 1;
+    resultText = "次の魔法のMP消費が0";
+  } else if (used.effect === "revive") {
+    actor.revivePower = Math.max(actor.revivePower, amount || 10);
+    resultText = `HP0時に${actor.revivePower}で復活`;
+  }
+
+  if (used.statusEffect && used.statusEffect !== "none" && !["inflict_status", "cure_status"].includes(used.effect)) {
+    const statusTarget = used.target === "self" ? actor : target;
+    applyStatusEffect(game, statusTarget, used.statusEffect);
   }
 
   game.discard.push(used);
@@ -317,7 +356,7 @@ function resolvePendingAttack(game) {
   const defenseTotal = defenseCards.reduce((s, c) => s + (c.defense || 0), 0);
   const attackCard = game.pendingAttack.card;
   const hitChance = (attackCard.effectChance ?? 100) / 100;
-  const canMiss = attackCard.effect === "all_attack" && hitChance < 1;
+  const canMiss = (attackCard.isAllAttack || attackCard.effect === "all_attack") && hitChance < 1;
   const unavoidable = defender.statuses.includes("dark_cloud");
   const hit = !canMiss || unavoidable || Math.random() <= hitChance;
   const damage = hit ? Math.max(0, game.pendingAttack.attack - defenseTotal) : 0;
@@ -329,16 +368,19 @@ function resolvePendingAttack(game) {
 
   game.discard.push(game.pendingAttack.card);
   defender.hp = Math.max(0, defender.hp - damage);
+  if (damage > 0 && attackCard.effect === "instant_defeat") defender.hp = 0;
 
   const chance = (attackCard.effectChance ?? 100) / 100;
-  if (damage > 0 && attackCard.effect === "inflict_status" && Math.random() <= chance) {
+  if (damage > 0 && attackCard.statusEffect && attackCard.statusEffect !== "none" && Math.random() <= chance) {
     applyStatusEffect(game, defender, attackCard.statusEffect);
   }
   defenseCards
     .filter(card => card.effect === "inflict_status")
     .forEach(card => {
       const defenseChance = (card.effectChance ?? 100) / 100;
-      if (Math.random() <= defenseChance) applyStatusEffect(game, attacker, card.statusEffect);
+      if (Math.random() <= defenseChance) {
+        applyStatusEffect(game, card.target === "self" ? defender : attacker, card.statusEffect);
+      }
     });
   if (damage > 0 && attackCard.effect === "hp_drain") healPlayer(game, attacker, damage);
   if (attackCard.effect === "self_damage") attacker.hp = Math.max(0, attacker.hp - damage);
@@ -394,6 +436,7 @@ function passTurn(game) {
 
   const endingPlayer = game[game.turn];
   processEndOfTurnStatuses(game, endingPlayer);
+  runGuardianAfterTurn(game, endingPlayer);
   checkWinner(game);
   if (game.winner) {
     window.renderGame();
@@ -475,6 +518,14 @@ function processEndOfTurnStatuses(game, player) {
 }
 
 function checkWinner(game) {
+  [game.player, game.enemy].forEach(player => {
+    if (player.hp <= 0 && player.revivePower > 0) {
+      player.hp = player.revivePower;
+      player.revivePower = 0;
+      game.logs.unshift(`${player.name}は太陽の加護で復活しました。`);
+    }
+  });
+
   if (game.player.hp <= 0) {
     game.winner = "enemy";
     game.phase = "ended";
