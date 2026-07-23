@@ -258,7 +258,7 @@ function renderArena() {
   els.arenaAttackerName.textContent = game[battle.attackerId].name;
   els.arenaDefenderName.textContent = game[battle.defenderId].name;
   const attackCards = battle.attackCards?.length ? battle.attackCards : [battle.attackCard];
-  els.arenaAttackCard.className = attackCards.length > 1 ? "combat-card-list" : "combat-card";
+  els.arenaAttackCard.className = attackCards.length > 1 ? "combat-card-list" : "combat-card single-card";
   els.arenaAttackCard.style.setProperty("--card-count", attackCards.length);
   els.arenaAttackCard.innerHTML = attackCards.map(card => bigCardHtml(card)).join("");
 
@@ -267,7 +267,7 @@ function renderArena() {
     els.arenaDefenseCards.style.setProperty("--card-count", 1);
     els.arenaDefenseCards.textContent = "防御カードなし";
   } else {
-    els.arenaDefenseCards.className = "combat-card-list";
+    els.arenaDefenseCards.className = battle.defenseCards.length > 1 ? "combat-card-list" : "combat-card single-card";
     els.arenaDefenseCards.style.setProperty("--card-count", battle.defenseCards.length);
     els.arenaDefenseCards.innerHTML = battle.defenseCards.map(card => bigCardHtml(card)).join("");
   }
@@ -470,7 +470,10 @@ function cardHtml(card) {
   return `
     <div class="card-art">${cardImageHtml(card)}</div>
     <div class="card-name">${card.name}</div>
-    <div class="card-stat">${statText(card)}</div>
+    <div class="card-stat">
+      <span class="full-card-stat">${statText(card)}</span>
+      <span class="mobile-card-stat">${shortStatText(card)}</span>
+    </div>
   `;
 }
 
@@ -480,7 +483,10 @@ function bigCardHtml(card) {
     <div class="battle-card">
       <div class="battle-art">${cardImageHtml(card)}</div>
       <strong>${card.name}</strong>
-      <span>${statText(card)}</span>
+      <span>
+        <span class="full-card-stat">${statText(card)}</span>
+        <span class="mobile-card-stat">${shortStatText(card)}</span>
+      </span>
     </div>
   `;
 }
@@ -538,6 +544,19 @@ function statText(card) {
   if (isDefenseCard(card)) return `防御 ${card.defense || 0}`;
   if (isHealingCard(card)) return `回復 ${card.heal || card.effectPower || 0}`;
   if (card.type === "magic") return `MP ${card.mpCost || 0}${chance}`;
+  return `￥${card.price || 0}`;
+}
+
+function shortStatText(card) {
+  const chance = (card.effectChance ?? 100) < 100 ? `${card.effectChance}%` : "";
+  if (isAdditionalAttackCard(card)) return `${chance}+攻${card.attack || 0}`;
+  if (card.type === "weapon") {
+    const hits = card.effect === "multi_hit" ? `×${card.hitCount || 2}` : "";
+    return `${chance}攻${card.attack || 0}${hits}`;
+  }
+  if (isDefenseCard(card)) return `守${card.defense || 0}`;
+  if (isHealingCard(card)) return `回${card.heal || card.effectPower || 0}`;
+  if (card.type === "magic") return `${chance}MP${card.mpCost || 0}`;
   return `￥${card.price || 0}`;
 }
 

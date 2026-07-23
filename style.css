@@ -28,6 +28,14 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.mobile-label {
+  display: none;
+}
+
+.mobile-card-stat {
+  display: none;
+}
+
 .game-shell,
 .admin-page {
   width: min(1280px, 100%);
@@ -1120,6 +1128,47 @@ button:disabled {
     border-radius: 6px;
   }
 
+  .single-card {
+    display: block;
+  }
+
+  .single-card > .battle-card {
+    width: 100%;
+    max-width: none;
+    height: 72px;
+    min-height: 72px;
+    display: grid;
+    grid-template-columns: 62px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 2px 5px;
+    align-items: center;
+  }
+
+  .single-card > .battle-card .battle-art {
+    grid-row: 1 / 3;
+    width: 62px;
+    height: 62px;
+  }
+
+  .single-card > .battle-card strong,
+  .single-card > .battle-card > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .single-card > .battle-card strong {
+    align-self: end;
+    font-size: 11px;
+  }
+
+  .single-card > .battle-card > span {
+    align-self: start;
+    color: #64748b;
+    font-size: 15px;
+  }
+
   .card-name {
     margin-top: 4px;
     height: 30px;
@@ -1151,5 +1200,413 @@ button:disabled {
     position: static;
     gap: 7px;
     font-size: 12px;
+  }
+}
+
+/* Phone battle layout: keep every turn action within the first screen. */
+@media (max-width: 680px) {
+  body {
+    background:
+      radial-gradient(circle at 50% 18%, rgba(235,255,252,.94), transparent 36%),
+      linear-gradient(180deg, #b9f5ef 0%, #73ddcf 54%, #47c7a9 100%);
+  }
+
+  .game-shell {
+    min-height: 100dvh;
+    padding:
+      max(4px, env(safe-area-inset-top))
+      4px
+      max(8px, env(safe-area-inset-bottom));
+  }
+
+  .desktop-label {
+    display: none;
+  }
+
+  .mobile-label {
+    display: inline;
+  }
+
+  .topbar {
+    position: relative;
+    height: 54px;
+    display: flex;
+    justify-content: center;
+    margin-bottom: 4px;
+    padding: 5px 54px;
+    border-width: 0 0 3px;
+    border-radius: 0;
+    background: #069574;
+  }
+
+  .topbar > div:first-child {
+    width: min(190px, 62vw);
+    align-self: center;
+    z-index: 1;
+  }
+
+  .topbar h1 {
+    width: 100%;
+    padding: 4px 18px;
+    border-radius: 999px;
+    background: #efffe9;
+    color: #d7664e;
+    text-align: center;
+    text-shadow: none;
+    font-size: 24px;
+    line-height: 34px;
+    letter-spacing: .14em;
+  }
+
+  .top-actions {
+    position: absolute;
+    inset: 4px 6px;
+    justify-content: space-between;
+    pointer-events: none;
+  }
+
+  .top-actions .admin-link,
+  .top-actions button {
+    width: 43px;
+    min-height: 43px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: #efffe9;
+    color: #07896c;
+    font-size: 24px;
+    line-height: 1;
+    text-shadow: none;
+    pointer-events: auto;
+  }
+
+  .game-layout {
+    grid-template-areas:
+      "stage"
+      "hand"
+      "players"
+      "detail"
+      "log";
+    gap: 4px;
+  }
+
+  .battle-stage {
+    min-height: 0;
+    padding: 5px;
+    border-radius: 5px;
+    box-shadow: none;
+  }
+
+  .stage-heading {
+    display: block;
+  }
+
+  .phase-badge {
+    min-height: 36px;
+    display: grid;
+    place-items: center;
+    padding: 4px 8px;
+    border-radius: 7px;
+    font-size: 18px;
+  }
+
+  .battle-message {
+    min-height: 30px;
+    display: grid;
+    place-items: center;
+    margin: 2px 0;
+    padding: 2px 6px;
+    font-size: 12px;
+    line-height: 1.25;
+  }
+
+  .hit-result {
+    margin: 3px auto;
+    padding: 5px 12px;
+    font-size: 15px;
+  }
+
+  .combat-flow {
+    height: 194px;
+    grid-template-columns: minmax(0, 1fr) 46px minmax(0, 1fr);
+    gap: 3px;
+    align-items: start;
+  }
+
+  .combat-side {
+    width: 100%;
+  }
+
+  .combat-name {
+    height: 30px;
+    display: grid;
+    place-items: center;
+    margin: 0 0 3px;
+    border: 2px solid #b8b8b8;
+    border-radius: 999px;
+    background: #f2f2f2;
+    color: #078e72;
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .combat-card,
+  .combat-card-list {
+    height: 158px;
+    max-height: 158px;
+    padding: 4px;
+    border-radius: 6px;
+    background: rgba(231,255,249,.46);
+  }
+
+  .combat-card-list .battle-card,
+  .battle-card {
+    width: 100%;
+    max-width: 116px;
+    height: 148px;
+    min-height: 148px;
+    padding: 4px;
+    border-radius: 6px;
+  }
+
+  .combat-card-list .battle-art,
+  .battle-art {
+    height: 88px;
+    border-radius: 4px;
+  }
+
+  .battle-card strong {
+    font-size: 10px;
+    line-height: 1.1;
+  }
+
+  .battle-card span {
+    font-size: 10px;
+  }
+
+  .combat-center {
+    padding-top: 42px;
+  }
+
+  .vs-mark {
+    font-size: 20px;
+  }
+
+  .calc-view {
+    margin-top: 4px;
+    font-size: 9px;
+    line-height: 1.25;
+  }
+
+  .damage-view {
+    margin-top: 7px;
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  .battle-controls {
+    gap: 4px;
+    margin-top: 3px;
+  }
+
+  .target-box {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .target-box:not(.hidden) {
+    display: grid;
+  }
+
+  .target-box button,
+  .action-row button,
+  .interaction-panel button {
+    min-height: 44px;
+    border-radius: 7px;
+    padding: 6px 8px;
+    font-size: 16px;
+  }
+
+  #cancelSelectBtn {
+    grid-column: 1 / -1;
+  }
+
+  .action-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+    margin-top: 0;
+  }
+
+  .action-row > button:only-child {
+    grid-column: 1 / -1;
+  }
+
+  #prayBtn:disabled {
+    display: none;
+  }
+
+  .interaction-panel {
+    padding: 6px;
+    border-radius: 7px;
+  }
+
+  .hand-panel {
+    padding: 5px;
+    border-width: 4px 2px 2px;
+    border-radius: 4px;
+    box-shadow: none;
+  }
+
+  .hand-panel .panel-title,
+  .hand-header p {
+    display: none;
+  }
+
+  .hand-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+    overflow: visible;
+    padding: 0;
+    scroll-snap-type: none;
+  }
+
+  .hand-card {
+    width: auto;
+    min-width: 0;
+    height: 104px;
+    padding: 3px;
+    border-width: 2px;
+    border-radius: 5px;
+    box-shadow: none;
+    overflow: hidden;
+    transform: none;
+    scroll-snap-align: none;
+  }
+
+  .hand-card:hover,
+  .hand-card.selected {
+    transform: none;
+  }
+
+  .hand-card.selected {
+    border-color: #ffb000;
+    box-shadow: 0 0 0 3px rgba(255,176,0,.42);
+  }
+
+  .hand-card .card-art {
+    height: 73px;
+    border-radius: 3px;
+  }
+
+  .hand-card .fallback-icon {
+    font-size: 28px;
+  }
+
+  .hand-card .card-name {
+    display: none;
+  }
+
+  .hand-card .card-stat {
+    height: 24px;
+    display: grid;
+    place-items: center;
+    margin: 1px -2px -2px;
+    padding: 1px;
+    background: #efffd7;
+    font-size: 9px;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .hand-card .full-card-stat,
+  .battle-card .full-card-stat {
+    display: none;
+  }
+
+  .hand-card .mobile-card-stat,
+  .battle-card .mobile-card-stat {
+    display: inline;
+  }
+
+  .players-panel {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 4px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .player-card {
+    min-height: 43px;
+    padding: 5px 8px;
+    border-color: #b9b9b9;
+    border-radius: 999px 8px 8px 999px;
+    background: #f1f1f1;
+  }
+
+  .player-card.target-highlight {
+    transform: none;
+    box-shadow: 0 0 0 3px rgba(255,211,77,.5);
+  }
+
+  .player-status-row {
+    min-height: 29px;
+  }
+
+  .player-status-row > strong {
+    min-width: 96px;
+    font-size: 21px;
+  }
+
+  .player-resources {
+    flex: 1;
+    justify-content: flex-end;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .player-effects {
+    margin: 2px 0 0 16px;
+    padding: 3px 0 0;
+    border-top-style: dashed;
+  }
+
+  .status-text,
+  .guardian-badge {
+    font-size: 10px;
+  }
+
+  .detail-panel,
+  .log-panel {
+    border-radius: 5px;
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 350px) {
+  .hand-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .player-status-row > strong {
+    min-width: 82px;
+    font-size: 18px;
+  }
+
+  .player-resources {
+    gap: 5px;
+    font-size: 10px;
   }
 }
