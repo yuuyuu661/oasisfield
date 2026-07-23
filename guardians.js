@@ -72,7 +72,10 @@ function runGuardianAfterTurn(game, endingPlayer) {
     return;
   }
   if (action.draw) drawCards(game, owner, action.draw);
-  if (action.cure) owner.statuses = [];
+  if (action.cure) {
+    owner.statuses = [];
+    if (owner === game.player) game.dreamMasks = {};
+  }
   if (action.heal) {
     owner.hp = Math.min(owner.hpCap || 99, owner.hp + action.heal);
     owner.maxHp = Math.max(owner.maxHp, owner.hp);

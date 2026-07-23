@@ -150,17 +150,18 @@ function loadCatalogOverrides() {
 
 function getCardMaster() {
   const overrides = catalogOverridesCache || loadCatalogOverrides();
-  const standardCards = DEFAULT_CARDS.map(card => ({
-    ...card,
-    ...(overrides[card.id] || {})
-  }));
+  const standardCards = DEFAULT_CARDS.map(card => {
+    const merged = { ...card, ...(overrides[card.id] || {}) };
+    if (card.catalogGroup === "armor") merged.type = "armor";
+    merged.name = merged.name?.replace(/[・･]\s*翠$/, "") || merged.name;
+    return merged;
+  });
   return [...standardCards, ...(registeredCardsCache || loadRegisteredCards())];
 }
 
 async function hydrateRegisteredCardImages() {
   const cards = loadRegisteredCards().map(card => ({
     ...card,
-    type: card.type === "armor" ? "enchant" : card.type,
     effect: card.type === "armor" && !card.effect ? "defense" : card.effect
   }));
 

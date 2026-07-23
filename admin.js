@@ -55,7 +55,12 @@ function getBuiltInCatalog() {
 function standardCardsWithOverrides() {
   const overrides = loadOverrides();
   return getBuiltInCatalog()
-    .map(card => ({ ...card, ...(overrides[card.id] || {}) }));
+    .map(card => {
+      const merged = { ...card, ...(overrides[card.id] || {}) };
+      if (card.catalogGroup === "armor") merged.type = "armor";
+      merged.name = merged.name?.replace(/[・･]\s*翠$/, "") || merged.name;
+      return merged;
+    });
 }
 
 if (catalogTitle) catalogTitle.textContent = "実装カード一覧";
@@ -244,7 +249,7 @@ async function renderList() {
     ...allStandardCards.map(card => ({ ...card, isStandard: true })),
     ...customCards.map(card => ({ ...card, isStandard: false }))
   ].filter(card => {
-    const typeMatches = filter === "all" || (card.type === "armor" ? "enchant" : card.type) === filter;
+    const typeMatches = filter === "all" || card.type === filter;
     const textMatches = !query || `${card.name} ${card.desc || ""}`.toLocaleLowerCase("ja").includes(query);
     return typeMatches && textMatches;
   });
@@ -290,7 +295,7 @@ async function editCard(id) {
 
   document.getElementById("editUid").value = card.id;
   document.getElementById("cardName").value = card.name || "";
-  cardTypeInput.value = card.type === "armor" ? "enchant" : (card.type || "weapon");
+  cardTypeInput.value = card.type || "weapon";
   renderEffectOptions(card.effect || (card.type === "armor" ? "defense" : "attack"));
 
   ["attack", "defense", "heal", "mpCost", "effectPower", "effectChance", "hitCount", "secondaryValue", "price", "drawRate"]

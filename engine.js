@@ -46,6 +46,7 @@ function createGame() {
     pendingTrade: null,
     lastBattle: null,
     hitResult: null,
+    dreamMasks: {},
     winner: null,
     busy: false,
     player: createPlayer("あなた"),
@@ -128,6 +129,8 @@ function selectAttackCard(game, uid) {
     game.selectedAttackEnhancementUids = [];
     if (["sell", "buy", "exchange"].includes(card.effect)) {
       beginTrade(game, uid);
+    } else if (card.effect === "random_event" && card.target === "all_players") {
+      useUtilityAndEndTurn(game, uid, game.attackerId);
     } else {
       game.selectedUtilityUid = uid;
       game.phase = "utility_target";
@@ -143,7 +146,7 @@ function selectAttackCard(game, uid) {
     return;
   }
 
-  game.logs.unshift("通常のエンチャントは防御時に使います。追加攻撃カードは武器と組み合わせて使えます。");
+  game.logs.unshift("防具は防御時に使います。追加攻撃カードは武器と組み合わせて使えます。");
 }
 
 function cancelSelection(game) {
@@ -178,7 +181,12 @@ function chooseAttackTarget(game, targetId) {
 
 function rollAttackHit(card, defender) {
   const chance = Number(card.effectChance ?? 100);
-  if (chance >= 100 || defender.statuses.includes("dark_cloud")) return true;
+  const isAllAttack = Boolean(
+    card.isAllAttack
+    || card.target === "all_enemies"
+    || ["all_attack", "magic_all_attack"].includes(card.effect)
+  );
+  if (chance >= 100 || (isAllAttack && defender.statuses.includes("dark_cloud"))) return true;
   return Math.random() * 100 < chance;
 }
 
@@ -279,6 +287,158 @@ function useHealAndEndTurn(game, uid) {
   return useUtilityAndEndTurn(game, uid, game.attackerId);
 }
 
+function replaceDiseaseWithFever(player) {
+  player.statuses = player.statuses.filter(status => !DISEASE_CHAIN.includes(status));
+  player.statuses.push("fever");
+}
+
+function runForcedRandomActions(game, actionCount = 3) {
+  const players = [game.player, game.enemy];
+  for (let round = 0; round < actionCount; round++) {
+    for (const actor of players) {
+      if (actor.hp <= 0 || actor.hand.length === 0) continue;
+      const card = actor.hand[Math.floor(Math.random() * actor.hand.length)];
+      removeCardFromHand(actor, card.uid);
+      const opponent = actor === game.player ? game.enemy : game.player;
+      const target = Math.random() < 0.5 ? actor : opponent;
+      const amount = Number(card.effectPower || card.heal || card.attack || 0);
+      let actionText = "効果なし";
+
+      if (card.type === "weapon" && !isAdditionalAttackCard(card)) {
+        const hit = rollAttackHit(card, target);
+        const damage = hit ? Math.max(0, Number(card.attack || 0)) * Math.max(1, Number(card.hitCount || 1)) : 0;
+        target.hp = Math.max(0, target.hp - damage);
+        actionText = hit ? `${target.name}に${damage}ダメージ` : "外れ";
+      } else if (card.type === "magic" && actor.mp >= Number(card.mpCost || 0)) {
+        actor.mp -= Number(card.mpCost || 0);
+        if (["magic_attack", "magic_all_attack", "hp_drain"].includes(card.effect)) {
+          const hit = rollAttackHit(card, target);
+          const damage = hit ? Math.max(0, amount) : 0;
+          target.hp = Math.max(0, target.hp - damage);
+          if (card.effect === "hp_drain") actor.hp = Math.min(actor.hpCap || 99, actor.hp + damage);
+          actionText = hit ? `${target.name}に${damage}ダメージ` : "外れ";
+        } else if (card.effect === "inflict_status") {
+          applyStatusEffect(game, target, card.statusEffect);
+          actionText = `${target.name}に${STATUS_EFFECTS[card.statusEffect] || "災い"}`;
+        } else if (card.effect === "heal_hp") {
+          target.hp = Math.min(target.hpCap || 99, target.hp + amount);
+          actionText = `${target.name}のHPを${amount}回復`;
+        }
+      } else if (card.type === "item") {
+        if (card.effect === "heal_hp" || card.effect === "heal") {
+          target.hp = Math.min(target.hpCap || 99, target.hp + amount);
+          actionText = `${target.name}のHPを${amount}回復`;
+        } else if (card.effect === "heal_mp") {
+          target.mp = Math.min(target.maxMp, target.mp + amount);
+          actionText = `${target.name}のMPを${amount}回復`;
+        } else if (card.effect === "self_damage") {
+          actor.hp = Math.max(0, actor.hp - amount);
+          actionText = `${actor.name}に${amount}ダメージ`;
+        }
+      }
+
+      drawCard(game, actor);
+      game.logs.unshift(`キノコ大発生: ${actor.name}が「${card.name}」を勝手に使い、${actionText}。`);
+    }
+  }
+}
+
+function triggerSupernaturalEvent(game, actor) {
+  const players = [game.player, game.enemy];
+  const opponent = actor === game.player ? game.enemy : game.player;
+  const events = [
+    {
+      name: "夕焼け",
+      run() {
+        players.forEach(replaceDiseaseWithFever);
+        return "全員が熱病になった";
+      }
+    },
+    {
+      name: "濃霧",
+      run() {
+        players.forEach(player => applyStatusEffect(game, player, "fog"));
+        return "全員が霧に包まれた";
+      }
+    },
+    {
+      name: "キノコ大発生",
+      run() {
+        runForcedRandomActions(game, 3);
+        return "全員が3回ずつ勝手に行動した";
+      }
+    },
+    {
+      name: "竜巻",
+      run() {
+        players.forEach(player => { player.hp = Math.min(player.hp, 1); });
+        return "全員のHPが1になった";
+      }
+    },
+    {
+      name: "巨大なタライ",
+      run() {
+        const target = players[Math.floor(Math.random() * players.length)];
+        target.hp = Math.max(0, target.hp - 50);
+        return `${target.name}に光属性50ダメージ`;
+      }
+    },
+    {
+      name: "ブラックホール",
+      run() {
+        const hit = Math.random() < 0.75;
+        if (hit) opponent.hp = Math.max(0, opponent.hp - 30);
+        return hit ? `${opponent.name}に闇属性30ダメージ` : "闇属性攻撃は外れた";
+      }
+    },
+    {
+      name: "暖流",
+      run() {
+        const before = actor.hp;
+        actor.hp = Math.min(actor.hpCap || 99, actor.hp + 50);
+        actor.maxHp = Math.max(actor.maxHp, actor.hp);
+        return `${actor.name}のHPが${actor.hp - before}回復した`;
+      }
+    },
+    {
+      name: "金山",
+      run() {
+        const receiver = players[Math.floor(Math.random() * players.length)];
+        const totalGold = players.reduce((sum, player) => sum + player.gold, 0);
+        players.forEach(player => { player.gold = 0; });
+        receiver.gold = totalGold;
+        return `全員のゴールド￥${totalGold}が${receiver.name}に集まった`;
+      }
+    },
+    {
+      name: "磁気嵐",
+      run() {
+        const counts = players.map(player => player.hand.length);
+        const mixedCards = shuffle(players.flatMap(player => player.hand));
+        let offset = 0;
+        players.forEach((player, index) => {
+          player.hand = mixedCards.slice(offset, offset + counts[index]);
+          offset += counts[index];
+        });
+        return "全員の手札が無作為に入れ替わった";
+      }
+    },
+    {
+      name: "日食",
+      run() {
+        players.forEach(player => summonRandomGuardian(game, player));
+        return "全員に無作為な守護神が宿った";
+      }
+    }
+  ];
+
+  const event = events[Math.floor(Math.random() * events.length)];
+  const detail = event.run();
+  const text = `${event.name}：${detail}`;
+  game.logs.unshift(`超常現象「${event.name}」が発生しました。${detail}。`);
+  return text;
+}
+
 function useUtilityAndEndTurn(game, uid, targetId) {
   if (game.busy || game.winner || !["attack", "utility_target"].includes(game.phase)) return false;
   const actor = getActor(game);
@@ -336,6 +496,7 @@ function useUtilityAndEndTurn(game, uid, targetId) {
     target.statuses = used.statusEffect === "all"
       ? []
       : target.statuses.filter(status => !(used.cureStatuses?.length ? used.cureStatuses : [used.statusEffect]).includes(status));
+    if (!target.statuses.includes("dream")) game.dreamMasks = {};
     resultText = `${target.name}の災いを解除`;
   } else if (used.effect === "inflict_status") {
     hit = rollAttackHit(used, target);
@@ -375,10 +536,14 @@ function useUtilityAndEndTurn(game, uid, targetId) {
     }
     resultText = `${target.name}の魔法を${count}枚忘れさせた`;
   } else if (used.effect === "random_event") {
-    const resource = ["hp", "mp", "gold"][Math.floor(Math.random() * 3)];
-    target[resource] = Math.min(99, target[resource] + (amount || 10));
-    if (resource === "hp") target.maxHp = Math.max(target.maxHp, target.hp);
-    resultText = `${target.name}の${resource === "hp" ? "HP" : resource === "mp" ? "MP" : "ゴールド"}が+${amount || 10}`;
+    if (used.target === "all_players") {
+      resultText = triggerSupernaturalEvent(game, actor);
+    } else {
+      const resource = ["hp", "mp", "gold"][Math.floor(Math.random() * 3)];
+      target[resource] = Math.min(99, target[resource] + (amount || 10));
+      if (resource === "hp") target.maxHp = Math.max(target.maxHp, target.hp);
+      resultText = `${target.name}の${resource === "hp" ? "HP" : resource === "mp" ? "MP" : "ゴールド"}が+${amount || 10}`;
+    }
   } else if (used.effect === "mp_free_magic") {
     target.freeMagicUses += 1;
     resultText = `${target.name}の次の魔法のMP消費が0`;
@@ -606,7 +771,7 @@ function toggleDefenseCard(game, uid) {
     defender.selectedDefense = defender.selectedDefense.filter(id => id !== uid);
   } else if (defender.statuses.includes("flash")) {
     defender.selectedDefense = [uid];
-    game.logs.unshift(`${defender.name}は閃光のためエンチャントを1枚しか使えません。`);
+    game.logs.unshift(`${defender.name}は閃光のため防具を1枚しか使えません。`);
   } else {
     defender.selectedDefense.push(uid);
   }
@@ -619,19 +784,20 @@ function getSelectedDefenseCards(defender) {
 }
 
 function applyDefenseReactions(game, defenseCards, attacker, defender, damage) {
-  if (damage <= 0) return;
   defenseCards.forEach(card => {
     const chance = Number(card.effectChance ?? 100) / 100;
     if (Math.random() > chance) return;
     if (card.effect === "inflict_status") {
-      applyStatusEffect(game, card.target === "self" ? defender : attacker, card.statusEffect);
-    } else if (card.effect === "counter_attack") {
+      if (card.target === "self" || damage > 0) {
+        applyStatusEffect(game, card.target === "self" ? defender : attacker, card.statusEffect);
+      }
+    } else if (damage > 0 && card.effect === "counter_attack") {
       const counter = card.effectPower > 0 ? damage * card.effectPower : damage;
       attacker.hp = Math.max(0, attacker.hp - counter);
       game.logs.unshift(`${card.name}が${counter}ダメージで反撃しました。`);
-    } else if (card.effect === "mp_gain_on_damage") {
+    } else if (damage > 0 && card.effect === "mp_gain_on_damage") {
       defender.mp = Math.min(defender.maxMp, defender.mp + damage * (card.effectPower || 2));
-    } else if (card.effect === "steal_gold_on_damage") {
+    } else if (damage > 0 && card.effect === "steal_gold_on_damage") {
       const stolen = Math.min(attacker.gold, damage);
       attacker.gold -= stolen;
       defender.gold = Math.min(99, defender.gold + stolen);
@@ -723,6 +889,7 @@ function passTurn(game) {
   game.selectedUtilityUid = null;
   game.pendingTrade = null;
   game.hitResult = null;
+  game.lastBattle = null;
   game.logs.unshift(`${getActor(game).name}のターンです。`);
 
   if (getActor(game).isCpu) {

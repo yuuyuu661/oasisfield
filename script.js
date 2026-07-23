@@ -158,7 +158,7 @@ function renderPhase() {
     els.battleMessage.textContent = "CPUが行動中です。";
   } else if (game.phase === "defense" && game.defenderId === "player") {
     els.phaseBadge.textContent = "命中・あなたの防御";
-    els.battleMessage.textContent = "命中しました。エンチャントだけを好きな枚数選び、防御確定を押してください。";
+    els.battleMessage.textContent = "命中しました。防具を好きな枚数選び、防御確定を押してください。";
   } else if (game.phase === "defense" && game.defenderId === "enemy") {
     els.phaseBadge.textContent = "命中・CPUの防御";
     els.battleMessage.textContent = "CPUが防御中です。";
@@ -301,7 +301,7 @@ function renderHand() {
   const isSelectingSale = game.phase === "sell_card" && game.turn === "player" && !game.busy;
 
   els.handHelp.textContent = canDefense
-    ? "エンチャントカードだけを複数選択できます。選んだら防御確定。"
+    ? "防具カードを複数選択できます。選んだら防御確定。"
     : isSelectingSale
       ? "売りたいカードを1枚選んでください。"
     : isTarget
@@ -316,7 +316,7 @@ function renderHand() {
       canAttack && (card.type === "item" || card.type === "magic")
     );
 
-    const usableAsDefense = canDefense && card.type === "enchant" && isDefenseCard(card);
+    const usableAsDefense = canDefense && isDefenseCard(card);
     const usableAsSale = isSelectingSale && card.uid !== game.pendingTrade?.tradeCardUid;
     const usable = usableAsAttack || usableAsDefense || usableAsSale;
     const selected = game.player.selectedDefense.includes(card.uid)
@@ -385,12 +385,18 @@ function visibleCardForPlayer(card) {
   if (!card || !game.player.statuses.includes("dream")) return card;
   if (!game.player.hand.some(handCard => handCard.uid === card.uid)) return card;
 
-  const hash = String(card.uid).split("").reduce((sum, character) => sum + character.charCodeAt(0), 0);
-  if (hash % 2 === 0) return card;
-
   const alternatives = getCardMaster().filter(master => master.id !== card.id);
   if (alternatives.length === 0) return card;
-  const disguise = alternatives[hash % alternatives.length];
+  game.dreamMasks ||= {};
+  if (!(card.uid in game.dreamMasks)) {
+    game.dreamMasks[card.uid] = Math.random() < 0.5
+      ? alternatives[Math.floor(Math.random() * alternatives.length)].id
+      : null;
+  }
+  const disguiseId = game.dreamMasks[card.uid];
+  if (!disguiseId) return card;
+  const disguise = alternatives.find(master => master.id === disguiseId);
+  if (!disguise) return card;
   return { ...disguise, uid: card.uid, name: `${disguise.name}？` };
 }
 
@@ -517,7 +523,7 @@ function defaultIcon(type) {
 
 function typeLabel(type) {
   if (type === "weapon") return "武器";
-  if (type === "armor" || type === "enchant") return "エンチャント";
+  if (type === "armor") return "防具";
   if (type === "enchant") return "エンチャント";
   if (type === "magic") return "魔法";
   if (type === "item") return "アイテム";

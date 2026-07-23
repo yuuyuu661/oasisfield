@@ -55,7 +55,7 @@ function oasisCatalogEffectLabel(effect) {
 function oasisCardName(sourceName) {
   let result = sourceName;
   OASIS_NAME_RULES.forEach(([from, to]) => { result = result.replace(from, to); });
-  return result === sourceName ? `${sourceName}・翠` : result;
+  return result;
 }
 
 function oasisArtPath(index) {
@@ -78,7 +78,7 @@ function catalogCard(sourceName, type, values = {}) {
     attack,
     defense,
     heal,
-    effect: values.effect || (type === "weapon" ? "attack" : type === "enchant" ? "defense" : "custom"),
+    effect: values.effect || (type === "weapon" ? "attack" : type === "armor" ? "defense" : "custom"),
     effectPower: values.effectPower ?? (heal || attack),
     effectChance: values.effectChance ?? 100,
     hitCount: values.hitCount || 1,
@@ -108,7 +108,7 @@ function allWeapon(name, attack, chance, defense, options = {}) {
 }
 
 function armor(name, defense, options = {}) {
-  return catalogCard(name, "enchant", { defense, catalogGroup: "armor", ...options });
+  return catalogCard(name, "armor", { defense, catalogGroup: "armor", ...options });
 }
 
 function magic(name, mpCost, options = {}) {
@@ -426,7 +426,7 @@ const OASIS_SPECIAL_DESCRIPTIONS = {
   "＜解放＞": "MP15。守護神をランダムに1体呼び出す。",
   "夜空のホウキ": "対象の手札から無作為に選ばれたカードを3枚消す。",
   "女神の石けん": "対象が習得した奇跡から無作為に2つ忘れさせる。",
-  "運命のひも": "ランダムな超常現象を発生させる。",
+  "運命のひも": "対象は選ばず、夕焼け・濃霧・キノコ大発生・竜巻・巨大なタライ・ブラックホール・暖流・金山・磁気嵐・日食のいずれかを無作為に発生させる。",
   "太陽のお守り": "所持者のHPが0になった時、自動でHP10まで復活する。",
   "天国草": "対象のMPを20回復し、天国病を与える。",
   "あぶないウス": "あぶないキネの効果発動時に99ダメージ。捨てても手元に戻り、1ダメージを受ける。",
@@ -452,7 +452,7 @@ function catalogDescription(card) {
     if (card.statusEffect && card.statusEffect !== "none") return `${attackText}。1ダメージ以上与えた時、対象に${oasisCatalogStatusLabel(card.statusEffect)}を与える。`;
     return `${attackText}${card.defense ? `、防御${card.defense}` : ""}。`;
   }
-  if (card.type === "enchant") {
+  if (card.type === "armor") {
     const attackText = card.attack ? `、追加攻撃+${card.attack}` : "";
     return `防御${card.defense}${attackText}。`;
   }

@@ -1,5 +1,6 @@
 const CARD_TYPES = {
   weapon: "武器",
+  armor: "防具",
   enchant: "エンチャント",
   magic: "魔法",
   item: "アイテム"
@@ -24,6 +25,21 @@ const CARD_EFFECTS = {
   ],
   enchant: [
     ["add_attack", "武器に重ねる追加攻撃"],
+    ["defense", "防御"],
+    ["attack_defense", "攻撃と防御"],
+    ["reflect_normal", "無属性攻撃を反射"],
+    ["reflect_magic", "魔法を反射"],
+    ["nullify_magic", "魔法を止める"],
+    ["magic_defense", "魔法防御"],
+    ["evade", "確率で回避"],
+    ["mp_free_magic", "MP消費なしで魔法を使用"],
+    ["on_defeat_heal", "HP0時に回復"],
+    ["counter_attack", "攻撃者へ反撃"],
+    ["mp_gain_on_damage", "被ダメージに応じてMP回復"],
+    ["steal_gold_on_damage", "被ダメージに応じてゴールド没収"],
+    ["element_change", "攻撃属性を変更"]
+  ],
+  armor: [
     ["defense", "防御"],
     ["attack_defense", "攻撃と防御"],
     ["reflect_normal", "無属性攻撃を反射"],
@@ -96,9 +112,9 @@ const STATUS_DESCRIPTIONS = {
   fever: "ターン終了時にHP-2。5%で地獄病へ悪化します。",
   hell: "ターン終了時にHP-5。5%で天国病へ悪化します。",
   heaven: "ターン終了時にHP+5。5%で発作が起きHP0になります。",
-  fog: "相手のHP・MP・災い情報が見えなくなります。",
+  fog: "神器の個別対象を指定できなくなり、相手のHP・MP・災い情報が見えなくなります。",
   flash: "防御時に使用できるカードが1枚になります。",
-  dream: "手札の約半数が別のカードに見えます。治癒すると元の表示へ戻ります。",
+  dream: "神器が50%の確率で別のカードに見えます。治癒すると本来の表示へ戻ります。",
   dark_cloud: "受ける全体攻撃が必ず命中します。",
   all: "付与済みの災いをすべて解除します。"
 };
@@ -113,11 +129,9 @@ const TARGET_TYPES = {
 };
 
 function cardTypeLabel(type) {
-  if (type === "armor") return CARD_TYPES.enchant;
   return CARD_TYPES[type] || type;
 }
 
 function cardEffectLabel(type, effect) {
-  const normalizedType = type === "armor" ? "enchant" : type;
-  return (CARD_EFFECTS[normalizedType] || []).find(([value]) => value === effect)?.[1] || effect || "効果なし";
+  return (CARD_EFFECTS[type] || []).find(([value]) => value === effect)?.[1] || effect || "効果なし";
 }
