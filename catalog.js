@@ -41,13 +41,15 @@ function catalogCard(sourceName, type, values = {}) {
     hitCount: values.hitCount || 1,
     isAllAttack: Boolean(values.isAllAttack),
     secondaryValue: values.secondaryValue || 0,
+    price: values.price ?? 0,
+    drawRate: values.drawRate ?? 0.2,
     mpCost: values.mpCost || 0,
     target: values.target || "enemy",
     statusEffect: values.statusEffect || "none",
     cureStatuses: values.cureStatuses || [],
     element: values.element || "none",
     catalogGroup: values.catalogGroup || type,
-    desc: values.desc || `${oasisCardName(sourceName)}の力を解放する。`
+    desc: values.desc || ""
   };
 }
 
@@ -178,7 +180,8 @@ const OASIS_ARMORS = [
   armor("土星の指輪", 0, { element: "earth", effect: "counter_attack", effectPower: 2 }),
   armor("天王の指輪", 0, { element: "light", effect: "inflict_status", statusEffect: "flash" }),
   armor("冥王の指輪", 0, { element: "dark", effect: "inflict_status", statusEffect: "dark_cloud" }),
-  armor("海王の指輪", 0, { effect: "heal_mp", effectPower: 2 }), armor("金星の指輪", 0, { effect: "custom" }),
+  armor("海王の指輪", 0, { effect: "mp_gain_on_damage", effectPower: 2 }),
+  armor("金星の指輪", 0, { effect: "steal_gold_on_damage" }),
   armor("虹のカーテン", 0, { effect: "element_change" }), armor("スーパーミラー", 0, { effect: "reflect_normal" })
 ];
 
@@ -204,14 +207,14 @@ const OASIS_MAGICS = [
   magic("＜霧＞", 3, { effect: "inflict_status", statusEffect: "fog", element: "water" }),
   magic("＜夢＞", 6, { effect: "inflict_status", statusEffect: "dream", element: "wood" }),
   magic("＜暗雲＞", 5, { effect: "inflict_status", statusEffect: "dark_cloud", element: "dark" }),
-  magic("＜音色＞", 2, { effect: "cure_status", statusEffect: "cold", target: "self" }),
+  magic("＜音色＞", 2, { effect: "cure_status", statusEffect: "cold", cureStatuses: ["cold", "fever", "fog", "flash"], target: "self" }),
   magic("＜歌声＞", 5, { effect: "cure_status", statusEffect: "all", target: "self" }),
-  magic("＜オーラ＞", 6, { effect: "boost_attack", effectPower: 10, target: "self" }),
-  magic("＜蜃気楼＞", 5, { effect: "boost_attack", effectPower: 20, target: "self" }),
+  magic("＜オーラ＞", 6, { effect: "double_attack", target: "self" }),
+  magic("＜蜃気楼＞", 5, { effect: "sure_all_attack", target: "self" }),
   magic("＜乱気流＞", 5, { effect: "reflect_magic", target: "self" }),
   magic("＜壁＞", 6, { effect: "nullify_magic", target: "self" }),
   magic("＜泉＞", 7, { heal: 10, effectPower: 10, effect: "heal_hp", target: "self" }),
-  magic("＜財宝＞", 5, { effectPower: 10, effect: "custom", target: "self" }),
+  magic("＜財宝＞", 5, { effectPower: 10, effect: "gold_gain", target: "self" }),
   magic("＜解放＞", 15, { effect: "summon_guardian", target: "self" })
 ];
 
@@ -235,8 +238,9 @@ const OASIS_ITEMS = [
   item("運命のひも", { effect: "random_event", target: "all_players" }),
   item("太陽のお守り", { effectPower: 10, effect: "revive", target: "self" }),
   item("あぶないウス", { effectPower: 1, effect: "custom", target: "self" }),
-  item("両替", { effect: "trade", target: "self" }), item("売る", { effect: "trade", target: "enemy" }),
-  item("買う", { effect: "trade", target: "enemy" }),
+  item("両替", { effect: "exchange", target: "self" }),
+  item("売る", { effect: "sell", target: "enemy" }),
+  item("買う", { effect: "buy", target: "enemy" }),
   item("小悪魔", { effectPower: 10, effect: "self_damage", target: "self" }),
   item("中悪魔", { effectPower: 20, effect: "self_damage", target: "self" }),
   item("大悪魔", { effectPower: 30, effect: "self_damage", target: "self" }),
@@ -252,6 +256,175 @@ const OASIS_CATALOG_CARDS = [
   ...OASIS_MAGICS,
   ...OASIS_ITEMS
 ];
+
+const OASIS_PRICE_OVERRIDES = {
+  "銅のこん棒": 1, "銀のこん棒": 10, "金のこん棒": 25, "ムチ": 1, "セイバーロッド": 10,
+  "パンチ": 1, "のこぶんぶん": 10, "ハチェット": 2, "とげベルト": 3, "鎖ガマ": 2,
+  "打撃の鉄板": 3, "乱弾武剣": 10, "硬いつち": 2, "エルボーサック": 3, "なぎなたクラシック": 3,
+  "ゴーストソード": 10, "ファイナル牙": 3, "地獄のハサミ": 15, "パワーハルベルト": 3,
+  "疾風剣": 10, "ワンダーソード": 4, "いんちきスピア": 10, "ソードシールド": 15,
+  "反射剣": 5, "月光のオノ": 10, "グラビティメイス": 4, "エンゼルナイフ": 15,
+  "六角凶": 15, "もろぶっこみアクス": 4, "リアルゴーストソード": 15, "精霊の杖": 20,
+  "絶景のヤリ": 5, "激烈疾風剣": 15, "伝説の剣のさや": 3, "エンゼルソード": 15,
+  "暴れフレイル": 5, "邪神の大剣": 1, "ドラゴンクロウ": 5, "エンゼルアクス": 15,
+  "神の剣": 30, "マジカルステッキ": 10, "たいまつ": 1, "あちちナイフ": 2,
+  "燃えムチ": 3, "ほむら巻き": 8, "ブレイズブレイド": 5, "火竜一角": 10,
+  "つらら": 1, "霧鉄砲": 10, "氷結ハンマー": 4, "水竜一角": 10, "木刀": 1,
+  "いばらのムチ": 2, "いがナッツ": 3, "夢の木づち": 15, "風のカギ爪": 10,
+  "つるぎ焼き": 2, "ダイヤモンドソード": 25, "フラッシュダガー": 15, "スタースタッフ": 3,
+  "ジャスティスランス": 5, "聖剣": 15, "あぶないキネ": 5, "ちくりんちょ": 10,
+  "コブラ": 10, "さよならの剣": 10, "キラーフォーク": 10, "死神のカマ": 20,
+  "吹き矢": 1, "クロスボウ": 2, "ブーメラン": 3, "バトルボール": 4, "戦士の弓": 5,
+  "ジェットヨーヨー": 6, "未知の羽根": 7, "サイキックカード": 8, "スカイハープーン": 5,
+  "恐怖の車輪": 10, "独楽コンバット": 10, "エンゼルの弓": 15, "発火のワンド": 15,
+  "ファイヤークロスボウ": 8, "魔水のワンド": 15, "葉っぱ手裏剣": 3, "熟成ゴムの弓": 6,
+  "旧石器ジャベリン": 4, "新石器トマホーク": 10, "輝きのカケラ": 10, "冥矢": 15,
+  "革の帽子": 1, "スカイブーツ": 5, "革の服": 2, "アイアンガントレット": 3,
+  "鬼のくつ": 10, "スカイガントレット": 5, "アイアンシールド": 4, "アイアンアーマー": 5,
+  "鬼の小手": 15, "スカイヘルム": 5, "はがねの小手": 6, "精霊の足袋": 20,
+  "はがねのかぶと": 7, "鬼のかぶと": 15, "スカイシールド": 5, "はがねの盾": 8,
+  "美しいガラス細工": 20, "月光のかぶと": 10, "はがねのよろい": 9, "鬼のよろい": 20,
+  "精霊の頭巾": 20, "スカイアーマー": 5, "エンゼルの小手": 15, "エナジーヘルム": 10,
+  "月光の盾": 10, "エナジーアーマー": 10, "エンゼルの帽子": 15, "コアバリヤー": 10,
+  "精霊の帯": 20, "月光のよろい": 10, "コアプロテクター": 10, "エンゼルシールド": 15,
+  "エンゼルアーマー": 15, "神の盾": 30, "火花の小手": 4, "フレイムブーツ": 6,
+  "フレイムメット": 8, "フレイムシールド": 10, "フレイムアーマー": 10,
+  "バーニングシールド": 10, "バーニングジャケット": 10, "熱狂仮面": 10,
+  "陽炎のよろい": 15, "アクアシューズ": 2, "アクアグローブ": 4, "アイスブーツ": 6,
+  "アイスヘルム": 8, "アイスシールド": 10, "アイスアーマー": 10, "スノーミトン": 10,
+  "スノーマスク": 10, "草かんむり": 2, "木の盾": 4, "御神木の小手": 6, "林の盾": 8,
+  "樹脂で編んだ法衣": 10, "森の盾": 10, "コハクの胸当て": 10, "夢見る帽子": 15,
+  "石版": 2, "岩盤": 4, "結晶板": 6, "大地のくつ": 8, "大地の小手": 10,
+  "大地のかぶと": 10, "大地のよろい": 10, "ぴかぴかハイヒール": 15, "きらきらドレス": 15,
+  "火星の指輪": 10, "水星の指輪": 10, "木星の指輪": 10, "土星の指輪": 10,
+  "天王の指輪": 10, "冥王の指輪": 10, "海王の指輪": 10, "金星の指輪": 10,
+  "虹のカーテン": 15, "スーパーミラー": 10,
+  "スマイルのしずく": 1, "ハートのしずく": 3, "ロマンスウォーター": 5,
+  "天の川のおいしい水": 20, "スマイルの花": 1, "ハートの花": 3, "ロマンスの香木": 5,
+  "天国草": 20, "スマイルの貝がら": 5, "ハートの貝がら": 15, "守護封印のつぼ": 10,
+  "ドキドキ涙": 1, "ちからの粉": 15, "精霊のぬいぐるみ": 5, "夜空のホウキ": 10,
+  "女神の石けん": 10, "運命のひも": 3, "太陽のお守り": 10, "あぶないウス": 1,
+  "両替": 5, "売る": 5, "買う": 5
+};
+
+const OASIS_RATE_OVERRIDES = {
+  "銅のこん棒": 0.6, "ムチ": 0.8, "パンチ": 1, "ハチェット": 1.2, "鎖ガマ": 1.4,
+  "乱弾武剣": 1.4, "硬いつち": 1.6, "なぎなたクラシック": 1.6, "ファイナル牙": 1.6,
+  "パワーハルベルト": 1.4, "ワンダーソード": 1.4, "反射剣": 0.6, "グラビティメイス": 0.8,
+  "もろぶっこみアクス": 0.8, "絶景のヤリ": 0.8, "暴れフレイル": 0.6, "ドラゴンクロウ": 0.6,
+  "革の帽子": 2, "革の服": 2, "アイアンガントレット": 1.6, "アイアンシールド": 1.6,
+  "アイアンアーマー": 1.6, "はがねの小手": 1.2, "はがねのかぶと": 1.2, "はがねの盾": 1.2,
+  "はがねのよろい": 1.2, "エナジーヘルム": 0.8, "エナジーアーマー": 0.8,
+  "コアバリヤー": 0.4, "コアプロテクター": 0.4, "虹のカーテン": 0.6,
+  "スマイルのしずく": 2.4, "ハートのしずく": 1.6, "ロマンスウォーター": 0.8,
+  "スマイルの花": 2.4, "ハートの花": 1.6, "ロマンスの香木": 0.8,
+  "スマイルの貝がら": 2.4, "ハートの貝がら": 1.2, "守護封印のつぼ": 0.6,
+  "ドキドキ涙": 0.4, "ちからの粉": 0.4, "精霊のぬいぐるみ": 0.4,
+  "両替": 4, "売る": 4, "買う": 4,
+  "小悪魔": 0, "中悪魔": 0, "大悪魔": 0, "イタズラマン": 0, "めぐみの妖精": 0
+};
+
+const OASIS_SPECIAL_DESCRIPTIONS = {
+  "乱弾武剣": "攻撃5。無属性の攻撃を弾き、全プレイヤーからランダムな1人へ返す。",
+  "反射剣": "攻撃10。無属性攻撃を攻撃者へはね返す。",
+  "月光のオノ": "攻撃10。奇跡を攻撃者へはね返す。",
+  "エンゼルナイフ": "攻撃11。奇跡を完全に止める。",
+  "精霊の杖": "攻撃12。このカードと同時に使う奇跡のMP消費を0にする。",
+  "エンゼルソード": "攻撃13。奇跡を完全に止める。",
+  "邪神の大剣": "攻撃14。与えたダメージと同じダメージを使用者も受ける。",
+  "エンゼルアクス": "攻撃15。奇跡を完全に止める。",
+  "マジカルステッキ": "全MPを消費し、消費したMP×2の攻撃を行う。",
+  "あぶないキネ": "攻撃30。攻撃先は自分を含めてランダム。あぶないウス所持者がいる場合、その所持者に99ダメージ。",
+  "スカイハープーン": "追加攻撃+9。奇跡を弾く。",
+  "エンゼルの弓": "追加攻撃+15。奇跡を完全に止める。",
+  "発火のワンド": "追加攻撃+2。攻撃全体を火属性に変える。",
+  "魔水のワンド": "追加攻撃+5。攻撃全体を水属性に変える。",
+  "昇天弓": "命中率25%の全体攻撃1。昇天時は自動発動し、命中率75%・攻撃30になる。",
+  "シャドウハンド": "命中率50%の全体攻撃2。1ダメージ以上与えた相手を即死させる。",
+  "熱狂仮面": "防御10。使用者に熱病を与える。",
+  "夢見る帽子": "防御14。使用者に夢を与え、所持カードをすべて引き直す。",
+  "火星の指輪": "1以上のダメージを受けた時、命中率75%で敵全体へ受けたダメージと同じ攻撃。",
+  "水星の指輪": "1以上のダメージを受けた時、攻撃者に霧を与える。",
+  "木星の指輪": "1以上のダメージを受けた時、攻撃者に夢を与える。",
+  "土星の指輪": "1以上のダメージを受けた時、攻撃者へ受けたダメージ×2の攻撃。",
+  "天王の指輪": "1以上のダメージを受けた時、攻撃者に閃光を与える。",
+  "冥王の指輪": "1以上のダメージを受けた時、攻撃者に暗雲を与える。",
+  "海王の指輪": "1以上のダメージを受けた時、自分のMPを受けたダメージ×2回復。",
+  "金星の指輪": "1以上のダメージを受けた時、攻撃者から受けたダメージと同額のゴールドを没収。",
+  "虹のカーテン": "受ける攻撃の属性を無属性に変える。",
+  "スーパーミラー": "受けた攻撃を種類や属性に関係なく攻撃者へはね返す。",
+  "＜オーラ＞": "MP6。単体武器の攻撃力を2倍にする。",
+  "＜蜃気楼＞": "MP5。次に使う単体武器を必中の全体攻撃にする。",
+  "＜乱気流＞": "MP5。奇跡を弾く。",
+  "＜壁＞": "MP6。無属性武器を完全に止める。",
+  "＜財宝＞": "MP5。対象のゴールドを10増やす。",
+  "＜解放＞": "MP15。守護神をランダムに1体呼び出す。",
+  "夜空のホウキ": "対象の手札から無作為に選ばれたカードを3枚消す。",
+  "女神の石けん": "対象が習得した奇跡から無作為に2つ忘れさせる。",
+  "運命のひも": "ランダムな超常現象を発生させる。",
+  "太陽のお守り": "所持者のHPが0になった時、自動でHP10まで復活する。",
+  "天国草": "対象のMPを20回復し、天国病を与える。",
+  "あぶないウス": "あぶないキネの効果発動時に99ダメージ。捨てても手元に戻り、1ダメージを受ける。",
+  "両替": "自分のHP・MP・ゴールドの合計値を、好きな配分に振り分ける。HP1＝MP1＝￥1。",
+  "売る": "自分の手札を1枚選び、価格分のゴールドを持つ相手へ売る。支払い後にカードを相手へ渡す。",
+  "買う": "相手の手札を無作為に1枚提示し、価格分のゴールドがあれば購入するか選べる。",
+  "イタズラマン": "使用者の手札または起こした奇跡から無作為に2つ消す。",
+  "めぐみの妖精": "使用者のHP・MP・ゴールドのいずれかをランダムに10増やす。"
+};
+
+function catalogDescription(card) {
+  if (OASIS_SPECIAL_DESCRIPTIONS[card.sourceName]) return OASIS_SPECIAL_DESCRIPTIONS[card.sourceName];
+
+  const chance = Number(card.effectChance ?? 100);
+  const chanceText = chance < 100 ? `命中率${chance}%の` : "";
+  if (card.type === "weapon") {
+    const attackText = card.catalogGroup === "additional_weapon"
+      ? `追加攻撃+${card.attack}`
+      : `${chanceText}${card.isAllAttack ? "全体攻撃" : "攻撃"}${card.attack}`;
+    if (card.effect === "multi_hit") return `攻撃${card.attack}を${card.hitCount || 2}回行う。`;
+    if (card.effect === "hp_drain") return `${attackText}。与えたダメージ分だけHPを回復する。`;
+    if (card.effect === "inflict_status") return `${attackText}。1ダメージ以上与えた時、対象に${STATUS_EFFECTS[card.statusEffect] || "災い"}を与える。`;
+    if (card.statusEffect && card.statusEffect !== "none") return `${attackText}。1ダメージ以上与えた時、対象に${STATUS_EFFECTS[card.statusEffect] || "災い"}を与える。`;
+    return `${attackText}${card.defense ? `、防御${card.defense}` : ""}。`;
+  }
+  if (card.type === "enchant") {
+    const attackText = card.attack ? `、追加攻撃+${card.attack}` : "";
+    return `防御${card.defense}${attackText}。`;
+  }
+  if (card.type === "magic") {
+    if (["magic_attack", "magic_all_attack", "hp_drain"].includes(card.effect)) {
+      const base = `MP${card.mpCost}。${chanceText}${card.effect === "magic_all_attack" ? "全体攻撃" : "攻撃"}${card.attack || card.effectPower}`;
+      return `${base}${card.effect === "hp_drain" ? "。与えたダメージ分だけHPを回復する。" : "。"}`
+    }
+    if (card.effect === "inflict_status") {
+      const attack = card.attack ? `${chanceText}攻撃${card.attack}。命中した時、` : "";
+      return `MP${card.mpCost}。${attack}対象に${STATUS_EFFECTS[card.statusEffect] || "災い"}を与える。`;
+    }
+    if (card.effect === "cure_status") return `MP${card.mpCost}。${card.statusEffect === "all" ? "すべての災い" : "指定された災い"}を消す。`;
+    if (card.effect === "heal_hp") return `MP${card.mpCost}。対象のHPを${card.effectPower || card.heal}回復する。`;
+    return `MP${card.mpCost}。${cardEffectLabel(card.type, card.effect)}。`;
+  }
+  if (card.effect === "heal_hp") return `対象のHPを${card.effectPower || card.heal}回復する。`;
+  if (card.effect === "heal_mp") return `対象のMPを${card.effectPower}回復する。`;
+  if (card.effect === "cure_status") return `${card.statusEffect === "all" ? "すべての災い" : "風邪・熱病・霧・閃光"}を消す。`;
+  if (card.effect === "random_heal_damage") return "対象のHPを10回復するか、10ダメージを与える。確率は50%ずつ。";
+  if (card.effect === "summon_guardian") return "対象に守護神をランダムに1体宿す。";
+  if (card.effect === "boost_attack") return `対象の次の攻撃を+${card.effectPower}する。`;
+  if (card.effect === "mp_free_magic") return "対象が次に使う奇跡のMP消費を0にする。";
+  if (card.effect === "self_damage") return `使用者に${card.effectPower}ダメージを与える。`;
+  return `${cardEffectLabel(card.type, card.effect)}。`;
+}
+
+OASIS_CATALOG_CARDS.forEach(card => {
+  const fallbackPrice = ["小悪魔", "中悪魔", "大悪魔", "イタズラマン", "めぐみの妖精"].includes(card.sourceName)
+    ? 0
+    : Math.max(1, Math.min(30, card.type === "magic"
+      ? card.mpCost || 1
+      : Math.ceil(Math.max(card.attack || 0, card.defense || 0, card.effectPower || 0, 1) / 2)));
+  card.price = OASIS_PRICE_OVERRIDES[card.sourceName] ?? (card.price > 0 ? card.price : fallbackPrice);
+  card.drawRate = OASIS_RATE_OVERRIDES[card.sourceName] ?? card.drawRate ?? 0.2;
+  card.desc = card.desc || catalogDescription(card);
+});
 
 const OASIS_CATALOG_COUNTS = OASIS_CATALOG_CARDS.reduce((counts, card) => {
   counts[card.catalogGroup] = (counts[card.catalogGroup] || 0) + 1;

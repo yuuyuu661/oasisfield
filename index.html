@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>おあしすフィールド Engine V6</title>
+  <title>おあしすフィールド Engine V9</title>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="stylesheet" href="style.css?v=8.0.0">
+  <link rel="stylesheet" href="style.css?v=9.0.0">
 </head>
 <body>
 
@@ -16,7 +16,7 @@
   <header class="topbar">
     <div>
       <h1>おあしすフィールド</h1>
-      <p>Engine V6 / 新UIレイアウト</p>
+      <p>Engine V9 / 確率抽選・ゴールド・取引対応</p>
     </div>
     <div class="top-actions">
       <a class="admin-link" href="admin.html">管理メニュー</a>
@@ -26,38 +26,13 @@
 
   <main class="game-layout">
 
-    <section class="progress-panel panel">
-      <div class="panel-title">進行状況</div>
-
-      <div class="turn-box">
-        <div id="phaseBadge" class="phase-badge">あなたの攻撃フェーズ</div>
-        <p id="battleMessage">武器カードを選んでください。</p>
-      </div>
-
-      <div class="selected-box">
-        <div class="sub-title">選択中</div>
-        <div id="selectedCardView" class="small-card-placeholder">なし</div>
-      </div>
-
-      <div class="target-box hidden" id="targetBox">
-        <div class="sub-title">攻撃対象</div>
-        <button id="targetEnemyBtn" class="primary-btn">CPUを攻撃</button>
-        <button id="cancelSelectBtn" class="ghost-btn">選択解除</button>
-      </div>
-
-      <div class="action-row">
-        <button id="confirmDefenseBtn" class="primary-btn hidden">防御確定</button>
-        <button id="prayBtn" class="ghost-btn">祈る</button>
-      </div>
-
-      <div class="pile-row">
-        <span>📚 山札 <strong id="deckCount">0</strong></span>
-        <span>🗑 捨て札 <strong id="discardCount">0</strong></span>
-      </div>
-    </section>
-
     <section class="battle-stage panel">
-      <div class="stage-title">バトル</div>
+      <div class="stage-heading">
+        <div class="stage-title">バトル</div>
+        <div id="phaseBadge" class="phase-badge">あなたのターン</div>
+      </div>
+      <p id="battleMessage" class="battle-message">カードを選んでください。</p>
+      <div id="hitResult" class="hit-result hidden"></div>
 
       <div class="combat-flow">
         <div class="combat-side">
@@ -77,6 +52,19 @@
         </div>
       </div>
 
+      <div class="battle-controls">
+        <div id="selectedCardView" class="small-card-placeholder">選択中: なし</div>
+        <div id="targetBox" class="target-box hidden">
+          <button id="targetSelfBtn" class="ghost-btn">自分を選択</button>
+          <button id="targetEnemyBtn" class="primary-btn">CPUを選択</button>
+          <button id="cancelSelectBtn" class="ghost-btn">選択解除</button>
+        </div>
+        <div class="action-row">
+          <button id="confirmDefenseBtn" class="primary-btn hidden">防御確定</button>
+          <button id="prayBtn" class="ghost-btn">祈る</button>
+        </div>
+        <div id="interactionPanel" class="interaction-panel hidden"></div>
+      </div>
     </section>
 
     <section class="players-panel panel">
@@ -91,12 +79,12 @@
           <div class="hp-bar"><div id="enemyHpBar"></div></div>
           <b id="enemyHpText">40 / 40</b>
         </div>
-        <div class="resource-line"><span id="enemyMpText">MP 20 / 20</span><span id="enemyStatusText">正常</span></div>
+        <div class="resource-line"><span id="enemyMpText">MP 10</span><span id="enemyGoldText">￥20</span><span id="enemyStatusText">正常</span></div>
         <div id="enemyHandCount" class="hand-count">手札 9</div>
         <div id="enemyGuardian" class="guardian-badge">守護神なし</div>
       </div>
 
-      <div class="player-card me">
+      <div id="playerPanel" class="player-card me targetable">
         <div class="player-card-top">
           <strong>あなた</strong>
           <span id="playerPhaseText">行動可能</span>
@@ -105,7 +93,7 @@
           <div class="hp-bar"><div id="playerHpBar"></div></div>
           <b id="playerHpText">40 / 40</b>
         </div>
-        <div class="resource-line"><span id="playerMpText">MP 20 / 20</span><span id="playerStatusText">正常</span></div>
+        <div class="resource-line"><span id="playerMpText">MP 10</span><span id="playerGoldText">￥20</span><span id="playerStatusText">正常</span></div>
         <div id="playerHandCount" class="hand-count">手札 9</div>
         <div id="playerGuardian" class="guardian-badge">守護神なし</div>
       </div>
@@ -136,13 +124,13 @@
   </main>
 </div>
 
-<script src="card-effects.js?v=8.0.0"></script>
-<script src="card-storage.js?v=7.2.0"></script>
-<script src="catalog.js?v=8.0.0"></script>
-<script src="cards.js?v=8.0.0"></script>
-<script src="guardians.js?v=8.0.0"></script>
-<script src="engine.js?v=8.0.0"></script>
-<script src="cpu.js?v=8.0.0"></script>
-<script src="script.js?v=8.0.0"></script>
+<script src="card-effects.js?v=9.0.0"></script>
+<script src="card-storage.js?v=9.0.0"></script>
+<script src="catalog.js?v=9.0.0"></script>
+<script src="cards.js?v=9.0.0"></script>
+<script src="guardians.js?v=9.0.0"></script>
+<script src="engine.js?v=9.0.0"></script>
+<script src="cpu.js?v=9.0.0"></script>
+<script src="script.js?v=9.0.0"></script>
 </body>
 </html>

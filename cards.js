@@ -128,6 +128,9 @@ const DEFAULT_CARDS = typeof OASIS_CATALOG_CARDS !== "undefined"
   : LEGACY_DEFAULT_CARDS;
 
 let registeredCardsCache = null;
+let catalogOverridesCache = null;
+
+const CARD_OVERRIDE_STORAGE_KEY = "oasisFieldCardOverrides";
 
 function loadRegisteredCards() {
   try {
@@ -137,8 +140,21 @@ function loadRegisteredCards() {
   }
 }
 
+function loadCatalogOverrides() {
+  try {
+    return JSON.parse(localStorage.getItem(CARD_OVERRIDE_STORAGE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
 function getCardMaster() {
-  return [...DEFAULT_CARDS, ...(registeredCardsCache || loadRegisteredCards())];
+  const overrides = catalogOverridesCache || loadCatalogOverrides();
+  const standardCards = DEFAULT_CARDS.map(card => ({
+    ...card,
+    ...(overrides[card.id] || {})
+  }));
+  return [...standardCards, ...(registeredCardsCache || loadRegisteredCards())];
 }
 
 async function hydrateRegisteredCardImages() {
@@ -158,23 +174,43 @@ async function hydrateRegisteredCardImages() {
       return card;
     }
   }));
+
+  const overrides = loadCatalogOverrides();
+  catalogOverridesCache = Object.fromEntries(await Promise.all(
+    Object.entries(overrides).map(async ([id, override]) => {
+      if (!override.imageKey) return [id, override];
+      try {
+        const image = await loadCardImageUrl(override.imageKey);
+        return [id, { ...override, image: image || override.image || "" }];
+      } catch (error) {
+        console.error(error);
+        return [id, override];
+      }
+    })
+  ));
+}
+
+function createRandomCard() {
+  const master = getCardMaster().filter(card => Number(card.drawRate ?? 0.2) > 0);
+  if (master.length === 0) return null;
+
+  const totalWeight = master.reduce((sum, card) => sum + Number(card.drawRate ?? 0.2), 0);
+  let roll = Math.random() * totalWeight;
+  let selected = master[master.length - 1];
+
+  for (const card of master) {
+    roll -= Number(card.drawRate ?? 0.2);
+    if (roll <= 0) {
+      selected = card;
+      break;
+    }
+  }
+
+  return { ...selected, uid: makeUid() };
 }
 
 function createDeck() {
-  const deck = [];
-  const master = getCardMaster();
-
-  master.forEach(card => {
-    const copies = isDefenseCard(card) ? 4 : 3;
-    for (let i = 0; i < copies; i++) {
-      deck.push({
-        ...card,
-        uid: makeUid()
-      });
-    }
-  });
-
-  return shuffle(deck);
+  return getCardMaster().map(card => ({ ...card, uid: makeUid() }));
 }
 
 function isDefenseCard(card) {

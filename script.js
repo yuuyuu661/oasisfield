@@ -7,8 +7,12 @@ const els = {
   cancelSelectBtn: document.getElementById("cancelSelectBtn"),
 
   enemyPanel: document.getElementById("enemyPanel"),
+  playerPanel: document.getElementById("playerPanel"),
   targetBox: document.getElementById("targetBox"),
+  targetSelfBtn: document.getElementById("targetSelfBtn"),
   targetEnemyBtn: document.getElementById("targetEnemyBtn"),
+  interactionPanel: document.getElementById("interactionPanel"),
+  hitResult: document.getElementById("hitResult"),
 
   phaseBadge: document.getElementById("phaseBadge"),
   battleMessage: document.getElementById("battleMessage"),
@@ -27,6 +31,8 @@ const els = {
   enemyHpText: document.getElementById("enemyHpText"),
   playerMpText: document.getElementById("playerMpText"),
   enemyMpText: document.getElementById("enemyMpText"),
+  playerGoldText: document.getElementById("playerGoldText"),
+  enemyGoldText: document.getElementById("enemyGoldText"),
   playerStatusText: document.getElementById("playerStatusText"),
   enemyStatusText: document.getElementById("enemyStatusText"),
   playerPhaseText: document.getElementById("playerPhaseText"),
@@ -35,11 +41,6 @@ const els = {
   enemyHandCount: document.getElementById("enemyHandCount"),
   playerGuardian: document.getElementById("playerGuardian"),
   enemyGuardian: document.getElementById("enemyGuardian"),
-
-
-  deckCount: document.getElementById("deckCount"),
-  discardCount: document.getElementById("discardCount"),
-
   handHelp: document.getElementById("handHelp"),
   playerHand: document.getElementById("playerHand"),
   logList: document.getElementById("logList"),
@@ -55,7 +56,7 @@ function renderGame() {
   renderArena();
   renderHand();
   renderDetail();
-  renderPiles();
+  renderInteraction();
   renderLogs();
 }
 
@@ -64,10 +65,12 @@ function renderHp() {
   const enemyHidden = game.player.statuses.includes("fog");
   updateBar(els.enemyHpBar, enemyHidden ? 0 : game.enemy.hp, game.enemy.maxHp);
 
-  els.playerHpText.textContent = `${game.player.hp} / ${game.player.maxHp}`;
-  els.enemyHpText.textContent = enemyHidden ? "??? / ???" : `${game.enemy.hp} / ${game.enemy.maxHp}`;
-  els.playerMpText.textContent = `MP ${game.player.mp} / ${game.player.maxMp}`;
-  els.enemyMpText.textContent = enemyHidden ? "MP ?? / ??" : `MP ${game.enemy.mp} / ${game.enemy.maxMp}`;
+  els.playerHpText.textContent = `HP ${game.player.hp}`;
+  els.enemyHpText.textContent = enemyHidden ? "HP ???" : `HP ${game.enemy.hp}`;
+  els.playerMpText.textContent = `MP ${game.player.mp}`;
+  els.enemyMpText.textContent = enemyHidden ? "MP ??" : `MP ${game.enemy.mp}`;
+  els.playerGoldText.textContent = `￥${game.player.gold}`;
+  els.enemyGoldText.textContent = enemyHidden ? "￥??" : `￥${game.enemy.gold}`;
   els.playerStatusText.textContent = statusText(game.player);
   els.enemyStatusText.textContent = enemyHidden ? "不明" : statusText(game.enemy);
   els.playerHandCount.textContent = `手札 ${game.player.hand.length}`;
@@ -100,24 +103,45 @@ function renderPhase() {
   } else if (game.winner === "enemy") {
     els.phaseBadge.textContent = "敗北";
     els.battleMessage.textContent = "CPUに倒されました。";
+  } else if (game.winner === "draw") {
+    els.phaseBadge.textContent = "引き分け";
+    els.battleMessage.textContent = "両者のHPが同時に0になりました。";
   } else if (game.phase === "target") {
-    els.phaseBadge.textContent = "対象選択";
+    els.phaseBadge.textContent = `${getActor(game).name}のターン`;
     els.battleMessage.textContent = `「${game.selectedAttackCard.name}」の対象を選んでください。`;
+  } else if (game.phase === "utility_target") {
+    els.phaseBadge.textContent = "アイテムの対象選択";
+    els.battleMessage.textContent = "自分またはCPUを選んでください。";
+  } else if (game.phase === "sell_card") {
+    els.phaseBadge.textContent = "売却カード選択";
+    els.battleMessage.textContent = "売りたいカードを手札から選んでください。";
+  } else if (game.phase === "sell_target") {
+    els.phaseBadge.textContent = "売却先選択";
+    els.battleMessage.textContent = "カードを売る相手を選んでください。";
+  } else if (game.phase === "buy_target") {
+    els.phaseBadge.textContent = "購入先選択";
+    els.battleMessage.textContent = "カードを購入する相手を選んでください。";
+  } else if (game.phase === "buy_offer") {
+    els.phaseBadge.textContent = "購入確認";
+    els.battleMessage.textContent = "提示されたカードを購入するか選んでください。";
+  } else if (game.phase === "exchange") {
+    els.phaseBadge.textContent = "両替";
+    els.battleMessage.textContent = "HP・MP・ゴールドを好きに配分してください。";
   } else if (game.phase === "attack" && game.turn === "player") {
-    els.phaseBadge.textContent = "あなたの攻撃フェーズ";
-    els.battleMessage.textContent = "武器を選ぶと対象選択へ。武器がない時だけ祈れます。";
+    els.phaseBadge.textContent = "あなたのターン";
+    els.battleMessage.textContent = "武器・魔法・アイテムを1つ選んでください。武器がない時だけ祈れます。";
   } else if (game.phase === "attack" && game.turn === "enemy") {
-    els.phaseBadge.textContent = "CPUの攻撃フェーズ";
+    els.phaseBadge.textContent = "CPUのターン";
     els.battleMessage.textContent = "CPUが行動中です。";
   } else if (game.phase === "defense" && game.defenderId === "player") {
-    els.phaseBadge.textContent = "あなたの防御フェーズ";
-    els.battleMessage.textContent = "防御カードを何枚でも選べます。";
+    els.phaseBadge.textContent = "命中・あなたの防御";
+    els.battleMessage.textContent = "命中しました。エンチャントだけを好きな枚数選び、防御確定を押してください。";
   } else if (game.phase === "defense" && game.defenderId === "enemy") {
-    els.phaseBadge.textContent = "CPUの防御フェーズ";
+    els.phaseBadge.textContent = "命中・CPUの防御";
     els.battleMessage.textContent = "CPUが防御中です。";
   } else if (game.phase === "resolving") {
     els.phaseBadge.textContent = "解決中";
-    els.battleMessage.textContent = "ダメージ計算中です。";
+    els.battleMessage.textContent = "効果を処理しています。";
   }
 
   els.playerPhaseText.textContent = getPlayerPhaseText("player");
@@ -125,30 +149,40 @@ function renderPhase() {
 
   const canAttack = game.phase === "attack" && game.turn === "player" && !game.winner && !game.busy;
   const canDefense = game.phase === "defense" && game.defenderId === "player" && !game.winner && !game.busy;
-  const isTarget = game.phase === "target" && !game.busy;
+  const needsTarget = ["target", "utility_target", "sell_target", "buy_target"].includes(game.phase) && !game.busy;
+  const isSelection = ["target", "utility_target", "sell_target", "buy_target", "buy_offer", "exchange"].includes(game.phase) && !game.busy;
   const canPray = canAttack && !playerHasWeapon(game.player);
 
   els.prayBtn.disabled = !canPray;
   els.confirmDefenseBtn.classList.toggle("hidden", !canDefense);
-  els.cancelSelectBtn.classList.toggle("hidden", !isTarget);
-  els.targetBox.classList.toggle("hidden", !isTarget);
-  els.enemyPanel.classList.toggle("target-highlight", isTarget);
+  els.cancelSelectBtn.classList.toggle("hidden", !isSelection);
+  els.targetBox.classList.toggle("hidden", !isSelection);
+  els.enemyPanel.classList.toggle("target-highlight", needsTarget);
+  els.targetEnemyBtn.classList.toggle("hidden", !needsTarget);
+  els.targetSelfBtn.classList.toggle("hidden", !needsTarget || ["sell_target", "buy_target"].includes(game.phase));
+  els.hitResult.classList.toggle("hidden", !game.hitResult);
+  els.hitResult.classList.toggle("hit", Boolean(game.hitResult?.hit));
+  els.hitResult.classList.toggle("miss", game.hitResult?.hit === false);
+  els.hitResult.textContent = game.hitResult?.text || "";
 }
 
 function getPlayerPhaseText(id) {
   if (game.winner) return "終了";
   if (game.phase === "attack" && game.attackerId === id) return "攻撃中";
   if (game.phase === "target" && game.attackerId === id) return "対象選択中";
+  if (["utility_target", "sell_card", "sell_target", "buy_target", "buy_offer", "exchange"].includes(game.phase) && game.attackerId === id) return "行動選択中";
   if (game.phase === "defense" && game.defenderId === id) return "防御中";
   if (game.phase === "resolving") return "解決中";
   return "待機中";
 }
 
 function renderSelectedCard() {
-  const card = game.selectedAttackCard || game.focusedCard;
+  const card = game.selectedAttackCard
+    || game.player.hand.find(candidate => candidate.uid === game.selectedUtilityUid)
+    || game.focusedCard;
 
   if (!card) {
-    els.selectedCardView.textContent = "なし";
+    els.selectedCardView.textContent = "選択中: なし";
     return;
   }
 
@@ -168,6 +202,7 @@ function currentBattle() {
       attackCard: game.pendingAttack.card,
       defenseCards,
       attack: game.pendingAttack.attack,
+      hitCount: game.pendingAttack.hitCount,
       defense,
       damage: null
     };
@@ -219,8 +254,11 @@ function renderArena() {
     els.arenaDefenseCards.innerHTML = battle.defenseCards.map(card => bigCardHtml(card)).join("");
   }
 
-  const result = Math.max(0, (battle.attack || 0) - (battle.defense || 0));
-  els.calcView.textContent = `攻撃 ${battle.attack || 0} - 防御 ${battle.defense || 0} = ${result}`;
+  const perHit = Math.max(0, (battle.attack || 0) - (battle.defense || 0));
+  const result = perHit * Math.max(1, battle.hitCount || 1);
+  els.calcView.textContent = battle.hitCount > 1
+    ? `(${battle.attack || 0} - 防御 ${battle.defense || 0}) × ${battle.hitCount}回 = ${result}`
+    : `攻撃 ${battle.attack || 0} - 防御 ${battle.defense || 0} = ${result}`;
 
   if (battle.damage === null) {
     els.damageView.textContent = "待機中";
@@ -240,9 +278,12 @@ function renderHand() {
   const canAttack = game.phase === "attack" && game.turn === "player" && !game.winner && !game.busy;
   const canDefense = game.phase === "defense" && game.defenderId === "player" && !game.winner && !game.busy;
   const isTarget = game.phase === "target" && !game.busy;
+  const isSelectingSale = game.phase === "sell_card" && game.turn === "player" && !game.busy;
 
   els.handHelp.textContent = canDefense
-    ? "防御カードを複数選択できます。選んだら防御確定。"
+    ? "エンチャントカードだけを複数選択できます。選んだら防御確定。"
+    : isSelectingSale
+      ? "売りたいカードを1枚選んでください。"
     : isTarget
       ? "対象を選択中です。"
       : "カードを選ぶと右下に詳細が表示されます。";
@@ -254,9 +295,12 @@ function renderHand() {
       card.type === "item" || card.type === "magic"
     );
 
-    const usableAsDefense = canDefense && isDefenseCard(card);
-    const usable = usableAsAttack || usableAsDefense;
-    const selected = game.player.selectedDefense.includes(card.uid) || game.selectedAttackUid === card.uid;
+    const usableAsDefense = canDefense && card.type === "enchant" && isDefenseCard(card);
+    const usableAsSale = isSelectingSale && card.uid !== game.pendingTrade?.tradeCardUid;
+    const usable = usableAsAttack || usableAsDefense || usableAsSale;
+    const selected = game.player.selectedDefense.includes(card.uid)
+      || game.selectedAttackUid === card.uid
+      || game.selectedUtilityUid === card.uid;
 
     const cardEl = document.createElement("div");
     cardEl.className = `hand-card ${card.type} ${usable ? "" : "disabled"} ${selected ? "selected" : ""}`;
@@ -275,7 +319,8 @@ function renderHand() {
         return;
       }
 
-      if (usableAsAttack) selectAttackCard(game, card.uid);
+      if (usableAsSale) selectSellCard(game, card.uid);
+      else if (usableAsAttack) selectAttackCard(game, card.uid);
       else if (usableAsDefense) toggleDefenseCard(game, card.uid);
 
       renderGame();
@@ -303,10 +348,13 @@ function renderDetail() {
     <div class="detail-type">${typeLabel(card.type)} / ${elementLabel(card.element)}</div>
     <div class="detail-effect">${cardEffectLabel(card.type, card.effect)}</div>
     <div class="detail-stats">
-      <span>攻撃 ${card.attack || 0}</span>
-      <span>防御 ${card.defense || 0}</span>
-      <span>回復 ${card.heal || card.effectPower || 0}</span>
-      <span>発動率 ${card.effectChance ?? 100}%</span>
+      ${card.attack ? `<span>攻撃 ${card.attack}</span>` : ""}
+      ${card.defense ? `<span>防御 ${card.defense}</span>` : ""}
+      ${isHealingCard(card) ? `<span>回復 ${card.heal || card.effectPower || 0}</span>` : ""}
+      ${card.type === "magic" ? `<span>MP消費 ${card.mpCost || 0}</span>` : ""}
+      <span>価格 ￥${card.price || 0}</span>
+      <span>授かり率 ${card.drawRate ?? 0.2}%</span>
+      ${(card.effectChance ?? 100) < 100 ? `<span>命中率 ${card.effectChance}%</span>` : ""}
     </div>
     <p>${card.desc || ""}</p>
   `;
@@ -325,9 +373,54 @@ function visibleCardForPlayer(card) {
   return { ...disguise, uid: card.uid, name: `${disguise.name}？` };
 }
 
-function renderPiles() {
-  els.deckCount.textContent = game.deck.length;
-  els.discardCount.textContent = game.discard.length;
+function renderInteraction() {
+  const panel = els.interactionPanel;
+  panel.classList.toggle("hidden", !["buy_offer", "exchange"].includes(game.phase));
+  if (game.phase === "buy_offer") {
+    const seller = game[game.pendingTrade?.sellerId];
+    const offer = seller?.hand.find(card => card.uid === game.pendingTrade?.offerCardUid);
+    panel.innerHTML = offer ? `
+      <div class="trade-offer">
+        ${miniCardHtml(offer, "attack")}
+        <strong>価格 ￥${offer.price || 0}</strong>
+        <span>所持金 ￥${game.player.gold}</span>
+        <div class="action-row">
+          <button id="acceptPurchaseBtn" class="primary-btn" ${game.player.gold < (offer.price || 0) ? "disabled" : ""}>購入する</button>
+          <button id="declinePurchaseBtn" class="ghost-btn">見送る</button>
+        </div>
+      </div>` : "提示できるカードがありません。";
+    document.getElementById("acceptPurchaseBtn")?.addEventListener("click", () => {
+      confirmPurchase(game, true);
+      renderGame();
+    });
+    document.getElementById("declinePurchaseBtn")?.addEventListener("click", () => {
+      confirmPurchase(game, false);
+      renderGame();
+    });
+  } else if (game.phase === "exchange") {
+    const total = game.player.hp + game.player.mp + game.player.gold;
+    panel.innerHTML = `
+      <div class="exchange-box">
+        <strong>配分合計: ${total}</strong>
+        <label>HP <input id="exchangeHp" type="number" min="0" max="99" value="${game.player.hp}"></label>
+        <label>MP <input id="exchangeMp" type="number" min="0" max="99" value="${game.player.mp}"></label>
+        <label>ゴールド <input id="exchangeGold" type="number" min="0" max="99" value="${game.player.gold}"></label>
+        <button id="confirmExchangeBtn" class="primary-btn">この配分で両替</button>
+        <p id="exchangeError"></p>
+      </div>`;
+    document.getElementById("confirmExchangeBtn")?.addEventListener("click", () => {
+      const hp = Number(document.getElementById("exchangeHp").value);
+      const mp = Number(document.getElementById("exchangeMp").value);
+      const gold = Number(document.getElementById("exchangeGold").value);
+      if (!confirmExchange(game, hp, mp, gold)) {
+        document.getElementById("exchangeError").textContent = `合計${total}になるように配分してください。`;
+        return;
+      }
+      renderGame();
+    });
+  } else {
+    panel.innerHTML = "";
+  }
 }
 
 function renderLogs() {
@@ -418,11 +511,12 @@ function elementLabel(element) {
 }
 
 function statText(card) {
-  if (card.type === "weapon") return `攻撃 ${card.attack || 0}`;
+  const chance = (card.effectChance ?? 100) < 100 ? ` / 命中${card.effectChance}%` : "";
+  if (card.type === "weapon") return `攻撃 ${card.attack || 0}${card.effect === "multi_hit" ? `×${card.hitCount || 2}` : ""}${chance}`;
   if (isDefenseCard(card)) return `防御 ${card.defense || 0}`;
   if (isHealingCard(card)) return `回復 ${card.heal || card.effectPower || 0}`;
-  if (card.type === "magic") return `MP ${card.mpCost || 0}`;
-  return "";
+  if (card.type === "magic") return `MP ${card.mpCost || 0}${chance}`;
+  return `￥${card.price || 0}`;
 }
 
 els.restartBtn?.addEventListener("click", () => {
@@ -448,13 +542,25 @@ els.cancelSelectBtn?.addEventListener("click", () => {
 });
 
 els.targetEnemyBtn?.addEventListener("click", () => {
-  chooseAttackTarget(game, "enemy");
+  chooseActionTarget(game, "enemy");
+  renderGame();
+});
+
+els.targetSelfBtn?.addEventListener("click", () => {
+  chooseActionTarget(game, "player");
   renderGame();
 });
 
 els.enemyPanel?.addEventListener("click", () => {
-  if (game.phase === "target" && !game.busy) {
-    chooseAttackTarget(game, "enemy");
+  if (["target", "utility_target", "sell_target", "buy_target"].includes(game.phase) && !game.busy) {
+    chooseActionTarget(game, "enemy");
+    renderGame();
+  }
+});
+
+els.playerPanel?.addEventListener("click", () => {
+  if (["target", "utility_target"].includes(game.phase) && !game.busy) {
+    chooseActionTarget(game, "player");
     renderGame();
   }
 });

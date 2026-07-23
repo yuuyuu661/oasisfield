@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="stylesheet" href="style.css?v=8.0.0">
+  <link rel="stylesheet" href="style.css?v=9.0.0">
 </head>
 <body>
 <div class="admin-page">
@@ -47,6 +47,15 @@
         </label>
         <label>防御力
           <input id="defense" type="number" value="0">
+        </label>
+      </div>
+
+      <div class="form-row">
+        <label>価格（ゴールド）
+          <input id="price" type="number" min="0" max="99" value="0">
+        </label>
+        <label>授かり率（重み・%）
+          <input id="drawRate" type="number" min="0" step="0.1" value="0.2">
         </label>
       </div>
 
@@ -118,14 +127,23 @@
 
     <section class="panel admin-list">
       <div class="panel-title">登録カード一覧</div>
+      <label class="catalog-filter">種類で絞り込み
+        <select id="catalogFilter">
+          <option value="all">すべて</option>
+          <option value="weapon">武器</option>
+          <option value="enchant">エンチャント</option>
+          <option value="magic">魔法</option>
+          <option value="item">アイテム</option>
+        </select>
+      </label>
       <div id="cardList"></div>
     </section>
   </section>
 </div>
 
-<script src="card-effects.js?v=8.0.0"></script>
-<script src="card-storage.js?v=7.2.0"></script>
-<script src="catalog.js?v=8.0.0"></script>
-<script src="admin.js?v=8.0.0"></script>
+<script src="card-effects.js?v=9.0.0"></script>
+<script src="card-storage.js?v=9.0.0"></script>
+<script src="catalog.js?v=9.0.0"></script>
+<script src="admin.js?v=9.0.0"></script>
 </body>
 </html>

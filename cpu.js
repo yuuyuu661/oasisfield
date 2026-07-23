@@ -30,17 +30,18 @@ function cpuTakeAttackAction(game) {
     }
     game.busy = false;
     drawCard(game, cpu);
-    game.logs.unshift("CPUは祈ってカードを1枚引きました。");
-    game.logs.unshift("CPUは祈ったためターン終了。");
+    game.logs.unshift("CPUは祈ってカードを1枚授かりました。");
     passTurn(game);
     return;
   }
 
   const chosen = weapons[0];
 
+  game.busy = false;
   game.selectedAttackUid = chosen.uid;
   game.selectedAttackCard = chosen;
   game.focusedCard = chosen;
+  game.phase = "target";
   game.logs.unshift(`CPUは「${chosen.name}」を選択しました。`);
   window.renderGame();
 

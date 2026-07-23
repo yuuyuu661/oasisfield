@@ -1,4 +1,5 @@
 const STORAGE_KEY = "oasisFieldCards";
+const OVERRIDE_STORAGE_KEY = "oasisFieldCardOverrides";
 
 const form = document.getElementById("cardForm");
 const list = document.getElementById("cardList");
@@ -10,9 +11,11 @@ const cardEffectInput = document.getElementById("cardEffect");
 const effectHelp = document.getElementById("effectHelp");
 const statusEffectInput = document.getElementById("statusEffect");
 const statusHelp = document.getElementById("statusHelp");
+const catalogFilter = document.getElementById("catalogFilter");
 
 let selectedImageFile = null;
 let currentImageUrl = "";
+let editingStandard = false;
 
 function loadCards() {
   try {
@@ -24,6 +27,24 @@ function loadCards() {
 
 function saveCards(cards) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(cards));
+}
+
+function loadOverrides() {
+  try {
+    return JSON.parse(localStorage.getItem(OVERRIDE_STORAGE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveOverrides(overrides) {
+  localStorage.setItem(OVERRIDE_STORAGE_KEY, JSON.stringify(overrides));
+}
+
+function standardCardsWithOverrides() {
+  const overrides = loadOverrides();
+  return (typeof OASIS_CATALOG_CARDS !== "undefined" ? OASIS_CATALOG_CARDS : [])
+    .map(card => ({ ...card, ...(overrides[card.id] || {}) }));
 }
 
 function fillSelect(select, values) {
@@ -53,8 +74,12 @@ function updateEffectHelp() {
     cure_status: "選択した災い、またはすべての災いを解除します。",
     heal_hp: "効果量または回復量の数値だけHPを回復します。",
     heal_mp: "効果量の数値だけMPを回復します。",
+    gold_gain: "効果量の数値だけ対象のゴールドを増やします。",
     summon_guardian: "守護神を呼び出す効果として登録します。",
-    random_event: "超常現象を起こす効果として登録します。"
+    random_event: "超常現象を起こす効果として登録します。",
+    sell: "自分のカードを選び、価格分のゴールドを持つ相手へ売ります。",
+    buy: "相手の手札を無作為に1枚提示し、価格分を支払って購入します。",
+    exchange: "自分のHP・MP・ゴールドの合計を好きに再配分します。"
   };
   effectHelp.textContent = hints[effect] || "効果量・確率・対象など、必要な数値を自由に設定できます。";
 }
@@ -95,7 +120,9 @@ form.addEventListener("submit", async event => {
   const cards = loadCards();
   const editUid = document.getElementById("editUid").value;
   const id = editUid || `custom_${Date.now()}`;
-  const oldCard = cards.find(card => card.id === id);
+  const standardBase = (typeof OASIS_CATALOG_CARDS !== "undefined" ? OASIS_CATALOG_CARDS : []).find(card => card.id === id);
+  const oldCard = cards.find(card => card.id === id)
+    || (standardBase ? { ...standardBase, ...(loadOverrides()[id] || {}) } : null);
 
   const card = {
     id,
@@ -111,6 +138,8 @@ form.addEventListener("submit", async event => {
     effectChance: Number(document.getElementById("effectChance").value || 0),
     hitCount: Number(document.getElementById("hitCount").value || 1),
     secondaryValue: Number(document.getElementById("secondaryValue").value || 0),
+    price: Number(document.getElementById("price").value || 0),
+    drawRate: Number(document.getElementById("drawRate").value || 0),
     target: document.getElementById("target").value,
     statusEffect: document.getElementById("statusEffect").value,
     element: document.getElementById("element").value,
@@ -136,11 +165,16 @@ form.addEventListener("submit", async event => {
     }
   }
 
-  const index = cards.findIndex(item => item.id === id);
-  if (index === -1) cards.push(card);
-  else cards[index] = card;
-
-  saveCards(cards);
+  if (standardBase || editingStandard) {
+    const overrides = loadOverrides();
+    overrides[id] = card;
+    saveOverrides(overrides);
+  } else {
+    const index = cards.findIndex(item => item.id === id);
+    if (index === -1) cards.push(card);
+    else cards[index] = card;
+    saveCards(cards);
+  }
   resetForm();
   await renderList();
 });
@@ -152,8 +186,10 @@ function resetForm() {
   document.getElementById("editUid").value = "";
   document.getElementById("effectChance").value = 100;
   document.getElementById("hitCount").value = 1;
+  document.getElementById("drawRate").value = 0.2;
   selectedImageFile = null;
   currentImageUrl = "";
+  editingStandard = false;
   imagePreview.textContent = "画像プレビュー";
   renderEffectOptions();
   updateStatusHelp();
@@ -180,8 +216,10 @@ async function resolveImage(card) {
 }
 
 async function renderList() {
-  const cards = loadCards();
-  const standardCards = typeof OASIS_CATALOG_CARDS !== "undefined" ? OASIS_CATALOG_CARDS : [];
+  const filter = catalogFilter?.value || "all";
+  const cards = loadCards().filter(card => filter === "all" || card.type === filter);
+  const allStandardCards = standardCardsWithOverrides();
+  const standardCards = allStandardCards.filter(card => filter === "all" || card.type === filter);
   const rows = await Promise.all(cards.map(async card => {
     const image = await resolveImage(card);
     return `
@@ -192,7 +230,7 @@ async function renderList() {
         <div class="admin-card-body">
           <strong>${escapeHtml(card.name)}</strong>
           <span>${cardTypeLabel(card.type)} / ${cardEffectLabel(card.type, card.effect)}</span>
-          <span>攻撃${card.attack || 0} / 防御${card.defense || 0} / 回復${card.heal || 0} / 効果量${card.effectPower || 0}</span>
+          <span>攻撃${card.attack || 0} / 防御${card.defense || 0} / 価格￥${card.price || 0} / 授かり率${card.drawRate ?? 0.2}%</span>
           <p>${escapeHtml(card.desc || "")}</p>
         </div>
         <div class="admin-card-actions">
@@ -201,21 +239,28 @@ async function renderList() {
         </div>
       </div>`;
   }));
-  const standardRows = standardCards.map(card => `
+  const standardRows = await Promise.all(standardCards.map(async card => {
+    const image = await resolveImage(card);
+    return `
     <div class="admin-card standard-card">
       <div class="admin-card-image">
-        <img src="${card.image}" alt="${escapeHtml(card.name)}" loading="lazy">
+        ${image ? `<img src="${image}" alt="${escapeHtml(card.name)}" loading="lazy">` : "🃏"}
       </div>
       <div class="admin-card-body">
         <strong>${escapeHtml(card.name)}</strong>
         <span>${cardTypeLabel(card.type)} / ${cardEffectLabel(card.type, card.effect)}</span>
-        <span>攻撃${card.attack || 0} / 防御${card.defense || 0} / 回復${card.heal || 0} / 効果量${card.effectPower || 0}</span>
+        <span>攻撃${card.attack || 0} / 防御${card.defense || 0} / 価格￥${card.price || 0} / 授かり率${card.drawRate ?? 0.2}%</span>
         <p>${escapeHtml(card.desc || "")}</p>
       </div>
-    </div>`);
+      <div class="admin-card-actions">
+        <button onclick="editCard('${card.id}')">編集</button>
+        <button class="reset-card-btn" onclick="resetStandardCard('${card.id}')">初期値に戻す</button>
+      </div>
+    </div>`;
+  }));
 
   list.innerHTML = `
-    <div class="catalog-summary">標準カード <strong>${standardCards.length}</strong>枚 / 追加カード <strong>${cards.length}</strong>枚</div>
+    <div class="catalog-summary">標準カード <strong>${allStandardCards.length}</strong>枚 / 追加カード <strong>${loadCards().length}</strong>枚</div>
     <h3 class="catalog-heading">追加・編集カード</h3>
     ${rows.length ? rows.join("") : '<div class="admin-empty">追加カードはまだありません。</div>'}
     <h3 class="catalog-heading">標準カードカタログ</h3>
@@ -223,15 +268,17 @@ async function renderList() {
 }
 
 async function editCard(id) {
-  const card = loadCards().find(item => item.id === id);
+  const standardCard = standardCardsWithOverrides().find(item => item.id === id);
+  const card = loadCards().find(item => item.id === id) || standardCard;
   if (!card) return;
+  editingStandard = Boolean(standardCard);
 
   document.getElementById("editUid").value = card.id;
   document.getElementById("cardName").value = card.name || "";
   cardTypeInput.value = card.type === "armor" ? "enchant" : (card.type || "weapon");
   renderEffectOptions(card.effect || (card.type === "armor" ? "defense" : "attack"));
 
-  ["attack", "defense", "heal", "mpCost", "effectPower", "effectChance", "hitCount", "secondaryValue"]
+  ["attack", "defense", "heal", "mpCost", "effectPower", "effectChance", "hitCount", "secondaryValue", "price", "drawRate"]
     .forEach(key => {
       const input = document.getElementById(key);
       input.value = card[key] ?? (key === "effectChance" ? 100 : key === "hitCount" ? 1 : 0);
@@ -261,6 +308,20 @@ async function deleteCard(id) {
   await renderList();
 }
 
+async function resetStandardCard(id) {
+  if (!confirm("この標準カードの編集内容と差し替え画像を初期値に戻しますか？")) return;
+  const overrides = loadOverrides();
+  delete overrides[id];
+  saveOverrides(overrides);
+  try {
+    await removeCardImage(id);
+  } catch (error) {
+    console.error(error);
+  }
+  if (document.getElementById("editUid").value === id) resetForm();
+  await renderList();
+}
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, character => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
@@ -272,3 +333,4 @@ fillSelect(document.getElementById("statusEffect"), STATUS_EFFECTS);
 updateStatusHelp();
 renderEffectOptions();
 renderList();
+catalogFilter?.addEventListener("change", renderList);

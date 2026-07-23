@@ -1,17 +1,25 @@
 const HAND_SIZE = 9;
-const CPU_DELAY = 900;
-const RESOLVE_DELAY = 1100;
+const MAX_HAND_SIZE = 18;
+const CPU_DELAY = 700;
+const RESOLVE_DELAY = 850;
 const DISEASE_CHAIN = ["cold", "fever", "hell", "heaven"];
+
+function renderNow() {
+  if (typeof window !== "undefined" && typeof window.renderGame === "function") window.renderGame();
+}
 
 function createPlayer(name, isCpu = false) {
   return {
     name,
     isCpu,
     hp: 40,
-    maxHp: 40,
-    mp: 20,
-    maxMp: 20,
+    maxHp: 99,
+    mp: 10,
+    maxMp: 99,
+    gold: 20,
     attackBoost: 0,
+    attackMultiplier: 1,
+    forceNextHit: false,
     guardian: null,
     freeMagicUses: 0,
     revivePower: 0,
@@ -27,14 +35,15 @@ function createGame() {
     turn: "player",
     attackerId: "player",
     defenderId: "enemy",
-    deck: createDeck(),
-    discard: [],
     logs: [],
     selectedAttackUid: null,
     selectedAttackCard: null,
+    selectedUtilityUid: null,
     focusedCard: null,
     pendingAttack: null,
+    pendingTrade: null,
     lastBattle: null,
+    hitResult: null,
     winner: null,
     busy: false,
     player: createPlayer("あなた"),
@@ -43,8 +52,7 @@ function createGame() {
 
   drawCards(game, game.player, HAND_SIZE);
   drawCards(game, game.enemy, HAND_SIZE);
-
-  game.logs.unshift("おあしすフィールド開始。HP40、初期手札9枚です。");
+  game.logs.unshift("おあしすフィールド開始。HP40・MP10・￥20・初期手札9枚です。");
   return game;
 }
 
@@ -56,28 +64,32 @@ function getDefender(game) {
   return game[game.defenderId];
 }
 
-function drawCard(game, player) {
-  if (game.deck.length === 0) {
-    game.deck = shuffle(game.discard);
-    game.discard = [];
-    game.logs.unshift("捨て札を山札に戻しました。");
-  }
+function opponentId(id) {
+  return id === "player" ? "enemy" : "player";
+}
 
-  const card = game.deck.pop();
-  if (card) player.hand.push(card);
+function drawCard(game, player) {
+  if (player.hand.length >= MAX_HAND_SIZE) {
+    game.logs.unshift(`${player.name}の手札は${MAX_HAND_SIZE}枚のため補充されませんでした。`);
+    return null;
+  }
+  const card = createRandomCard();
+  if (!card) {
+    game.logs.unshift("授かり対象のカードがありません。");
+    return null;
+  }
+  player.hand.push(card);
+  return card;
 }
 
 function drawCards(game, player, count) {
-  for (let i = 0; i < count; i++) {
-    if (game.deck.length === 0 && game.discard.length === 0) break;
-    drawCard(game, player);
-  }
+  for (let i = 0; i < count; i++) drawCard(game, player);
 }
 
 function removeCardFromHand(player, uid) {
-  const i = player.hand.findIndex(c => c.uid === uid);
-  if (i === -1) return null;
-  return player.hand.splice(i, 1)[0];
+  const index = player.hand.findIndex(card => card.uid === uid);
+  if (index === -1) return null;
+  return player.hand.splice(index, 1)[0];
 }
 
 function playerHasWeapon(player) {
@@ -86,11 +98,9 @@ function playerHasWeapon(player) {
 
 function selectAttackCard(game, uid) {
   if (game.busy || game.winner || game.phase !== "attack" || game.turn !== "player") return;
-
   const actor = getActor(game);
-  const card = actor.hand.find(c => c.uid === uid);
+  const card = actor.hand.find(candidate => candidate.uid === uid);
   if (!card) return;
-
   game.focusedCard = card;
 
   if (card.type === "weapon") {
@@ -101,50 +111,81 @@ function selectAttackCard(game, uid) {
     return;
   }
 
-  if (card.type === "item" || card.type === "magic") {
-    useUtilityAndEndTurn(game, uid);
+  if (card.type === "item") {
+    if (["sell", "buy", "exchange"].includes(card.effect)) {
+      beginTrade(game, uid);
+    } else {
+      game.selectedUtilityUid = uid;
+      game.phase = "utility_target";
+      game.logs.unshift(`「${card.name}」を使う対象を選んでください。`);
+    }
     return;
   }
 
-  game.logs.unshift("攻撃フェーズでは武器・回復アイテムを選んでください。");
+  if (card.type === "magic") {
+    const targetId = card.target === "self" ? game.attackerId : opponentId(game.attackerId);
+    useUtilityAndEndTurn(game, uid, targetId);
+    return;
+  }
+
+  game.logs.unshift("行動時に使えるのは武器・魔法・アイテムです。エンチャントは防御時だけ使えます。");
 }
 
 function cancelSelection(game) {
-  if (game.busy || game.phase !== "target") return;
+  if (game.busy || !["target", "utility_target", "sell_card", "sell_target", "buy_target", "buy_offer", "exchange"].includes(game.phase)) return;
   game.selectedAttackUid = null;
   game.selectedAttackCard = null;
+  game.selectedUtilityUid = null;
+  game.pendingTrade = null;
   game.phase = "attack";
-  game.logs.unshift("カード選択を解除しました。");
+  game.logs.unshift("選択を解除しました。");
+}
+
+function chooseActionTarget(game, targetId) {
+  if (game.busy || game.winner || !["player", "enemy"].includes(targetId)) return false;
+  if (game.phase === "target") return startAttack(game, game.selectedAttackUid, targetId);
+  if (game.phase === "utility_target") return useUtilityAndEndTurn(game, game.selectedUtilityUid, targetId);
+  if (game.phase === "sell_target") return completeSale(game, targetId);
+  if (game.phase === "buy_target") return preparePurchaseOffer(game, targetId);
+  return false;
 }
 
 function chooseAttackTarget(game, targetId) {
-  if (game.busy || game.winner || game.phase !== "target" || game.turn !== "player") return false;
-  if (targetId !== "enemy") return false;
-  startAttack(game, game.selectedAttackUid, targetId);
-  return true;
+  return chooseActionTarget(game, targetId);
+}
+
+function rollAttackHit(card, defender) {
+  const chance = Number(card.effectChance ?? 100);
+  if (chance >= 100 || defender.statuses.includes("dark_cloud")) return true;
+  return Math.random() * 100 < chance;
 }
 
 function startAttack(game, uid, defenderId) {
+  if (game.busy || game.winner || game.phase !== "target") return false;
   const attacker = getActor(game);
   const used = removeCardFromHand(attacker, uid);
   if (!used || used.type !== "weapon") return false;
 
-  let attackValue = (used.attack || 0) + (attacker.attackBoost || 0);
-  if (used.effect === "multi_hit") attackValue *= Math.max(1, used.hitCount || 1);
+  if (used.effect === "random_target") defenderId = Math.random() < 0.5 ? "player" : "enemy";
+  const defender = game[defenderId];
+  let attackValue = ((used.attack || 0) + (attacker.attackBoost || 0)) * (attacker.attackMultiplier || 1);
   if (used.effect === "mp_scaled_attack") {
     attackValue = attacker.mp * (used.effectPower || 2);
     attacker.mp = 0;
   }
+  const hitCount = used.effect === "multi_hit" ? Math.max(2, used.hitCount || 2) : 1;
   attacker.attackBoost = 0;
 
+  const hit = defenderId === game.attackerId || attacker.forceNextHit ? true : rollAttackHit(used, defender);
   game.defenderId = defenderId;
   game.pendingAttack = {
     card: used,
     attack: attackValue,
+    hitCount,
+    hit,
     attackerId: game.attackerId,
     defenderId
   };
-
   game.lastBattle = {
     attackerId: game.attackerId,
     defenderId,
@@ -152,186 +193,379 @@ function startAttack(game, uid, defenderId) {
     defenseCards: [],
     attack: attackValue,
     defense: 0,
-    damage: null
+    damage: hit ? "🎯 命中" : "💨 外れ"
   };
-
+  game.hitResult = {
+    hit,
+    text: hit ? "命中！ 防御を選択してください" : "攻撃は外れました"
+  };
   game.selectedAttackUid = null;
   game.selectedAttackCard = null;
-  game.phase = "defense";
-
-  const defender = game[defenderId];
+  attacker.attackMultiplier = 1;
+  attacker.forceNextHit = false;
   defender.selectedDefense = [];
+  game.logs.unshift(`${attacker.name}の「${used.name}」は${hit ? "命中しました" : "外れました"}。`);
 
-  game.logs.unshift(`${attacker.name}は「${used.name}」で${defender.name}を攻撃。攻撃${attackValue}。`);
+  if (!hit) {
+    game.phase = "resolving";
+    game.busy = true;
+    renderNow();
+    setTimeout(() => resolvePendingAttack(game), RESOLVE_DELAY);
+    return true;
+  }
+
+  if (defenderId === game.attackerId) {
+    game.phase = "resolving";
+    game.busy = true;
+    renderNow();
+    setTimeout(() => resolvePendingAttack(game), RESOLVE_DELAY);
+    return true;
+  }
+
+  game.phase = "defense";
+  game.busy = false;
+  renderNow();
 
   if (defender.isCpu) {
     game.busy = true;
-    window.renderGame();
-
+    renderNow();
     setTimeout(() => {
       cpuChooseDefense(game);
-      window.renderGame();
-
-      setTimeout(() => {
-        resolvePendingAttack(game);
-      }, RESOLVE_DELAY);
+      renderNow();
+      setTimeout(() => resolvePendingAttack(game), RESOLVE_DELAY);
     }, CPU_DELAY);
-  } else {
-    game.busy = false;
-    window.renderGame();
   }
-
   return true;
 }
 
 function useHealAndEndTurn(game, uid) {
-  useUtilityAndEndTurn(game, uid);
+  return useUtilityAndEndTurn(game, uid, game.attackerId);
 }
 
-function useUtilityAndEndTurn(game, uid) {
-  if (game.busy || game.winner || game.phase !== "attack") return;
-
+function useUtilityAndEndTurn(game, uid, targetId) {
+  if (game.busy || game.winner || !["attack", "utility_target"].includes(game.phase)) return false;
   const actor = getActor(game);
-  const used = removeCardFromHand(actor, uid);
-  if (!used) return;
+  const original = actor.hand.find(card => card.uid === uid);
+  if (!original) return false;
 
-  if (used.type === "magic") {
+  if (original.type === "item" && ["sell", "buy", "exchange"].includes(original.effect)) {
+    if (actor.isCpu) return executeCpuTrade(game, uid);
+    beginTrade(game, uid);
+    return true;
+  }
+
+  if (original.type === "magic") {
     const usesFreeMagic = actor.freeMagicUses > 0;
-    const cost = usesFreeMagic ? 0 : (used.mpCost || 0);
+    const cost = usesFreeMagic ? 0 : (original.mpCost || 0);
     if (actor.mp < cost) {
-      actor.hand.push(used);
       game.logs.unshift(`MPが${cost}必要です。`);
-      return;
+      return false;
     }
     actor.mp -= cost;
     if (usesFreeMagic) actor.freeMagicUses -= 1;
   }
 
-  const target = actor === game.player ? game.enemy : game.player;
-  const amount = used.effectPower || used.heal || used.attack || 0;
+  const used = removeCardFromHand(actor, uid);
+  if (!used) return false;
+  const resolvedTargetId = targetId || (used.target === "self" ? game.attackerId : opponentId(game.attackerId));
+  const target = game[resolvedTargetId];
+  const amount = Number(used.effectPower || used.heal || used.attack || 0);
   let resultText = cardEffectLabel(used.type, used.effect);
+  let hit = true;
 
   if (used.effect === "heal" || used.effect === "heal_hp") {
-    healPlayer(game, actor, amount);
-    resultText = `回復 ${amount}`;
+    healPlayer(game, target, amount);
+    resultText = `${target.name}のHPを${amount}回復`;
   } else if (used.effect === "heal_mp") {
-    const before = actor.mp;
-    actor.mp = Math.min(actor.maxMp, actor.mp + amount);
-    resultText = `MP回復 ${actor.mp - before}`;
+    const before = target.mp;
+    target.mp = Math.min(target.maxMp, target.mp + amount);
+    resultText = `${target.name}のMPを${target.mp - before}回復`;
+  } else if (used.effect === "gold_gain") {
+    target.gold = Math.min(99, target.gold + amount);
+    resultText = `${target.name}のゴールドを￥${amount}増加`;
   } else if (used.effect === "boost_attack") {
-    actor.attackBoost += amount;
-    resultText = `攻撃力 +${amount}`;
+    target.attackBoost += amount;
+    resultText = `${target.name}の次の攻撃を+${amount}`;
+  } else if (used.effect === "double_attack") {
+    target.attackMultiplier = 2;
+    resultText = `${target.name}の次の単体武器の攻撃力を2倍`;
+  } else if (used.effect === "sure_all_attack") {
+    target.forceNextHit = true;
+    resultText = `${target.name}の次の単体武器を必中化`;
   } else if (used.effect === "draw") {
-    drawCards(game, actor, Math.max(1, amount));
-    resultText = `${Math.max(1, amount)}枚ドロー`;
+    drawCards(game, target, Math.max(1, amount));
+    resultText = `${target.name}が${Math.max(1, amount)}枚授かる`;
   } else if (used.effect === "cure_status") {
-    actor.statuses = used.statusEffect === "all"
+    target.statuses = used.statusEffect === "all"
       ? []
-      : actor.statuses.filter(status => !(used.cureStatuses?.length ? used.cureStatuses : [used.statusEffect]).includes(status));
-    resultText = "災いを解除";
+      : target.statuses.filter(status => !(used.cureStatuses?.length ? used.cureStatuses : [used.statusEffect]).includes(status));
+    resultText = `${target.name}の災いを解除`;
   } else if (used.effect === "inflict_status") {
-    const chance = (used.effectChance ?? 100) / 100;
-    const applied = Math.random() <= chance && applyStatusEffect(game, target, used.statusEffect);
-    if ((used.attack || 0) > 0) target.hp = Math.max(0, target.hp - used.attack);
-    resultText = applied
-      ? `${STATUS_EFFECTS[used.statusEffect] || "災い"}を付与`
-      : "災いの付与に失敗";
+    hit = rollAttackHit(used, target);
+    if (hit && (used.attack || 0) > 0) target.hp = Math.max(0, target.hp - used.attack);
+    if (hit) applyStatusEffect(game, target, used.statusEffect);
+    resultText = hit ? `${target.name}に${STATUS_EFFECTS[used.statusEffect] || "災い"}を付与` : "魔法は外れました";
   } else if (["magic_attack", "magic_all_attack", "hp_drain"].includes(used.effect)) {
-    const canMiss = used.effect === "magic_all_attack" && (used.effectChance ?? 100) < 100;
-    const hit = !canMiss || target.statuses.includes("dark_cloud") || Math.random() <= ((used.effectChance ?? 100) / 100);
+    hit = rollAttackHit(used, target);
     const damage = hit ? Math.max(0, amount) : 0;
     target.hp = Math.max(0, target.hp - damage);
     if (used.effect === "hp_drain") healPlayer(game, actor, damage);
-    resultText = `${damage}ダメージ`;
+    resultText = hit ? `${target.name}に${damage}ダメージ（魔法は防御不可）` : "魔法は外れました";
   } else if (used.effect === "random_heal_damage") {
     if (Math.random() < 0.5) {
-      healPlayer(game, actor, amount);
-      resultText = `回復 ${amount}`;
+      healPlayer(game, target, amount);
+      resultText = `${target.name}のHPを${amount}回復`;
     } else {
-      actor.hp = Math.max(0, actor.hp - amount);
-      resultText = `自分に${amount}ダメージ`;
+      target.hp = Math.max(0, target.hp - amount);
+      resultText = `${target.name}に${amount}ダメージ`;
     }
   } else if (used.effect === "summon_guardian") {
-    const guardian = summonRandomGuardian(game, actor);
-    resultText = guardian ? `${guardian.name}を召喚` : "守護神を召喚できない";
+    const guardian = summonRandomGuardian(game, target);
+    resultText = guardian ? `${target.name}に${guardian.name}を召喚` : "守護神を召喚できない";
   } else if (used.effect === "self_damage") {
     actor.hp = Math.max(0, actor.hp - amount);
-    resultText = `自分に${amount}ダメージ`;
+    resultText = `${actor.name}に${amount}ダメージ`;
   } else if (used.effect === "discard") {
-    const discardCount = Math.min(target.hand.length, Math.max(1, amount));
-    for (let i = 0; i < discardCount; i++) {
-      const removed = target.hand.splice(Math.floor(Math.random() * target.hand.length), 1)[0];
-      if (removed) game.discard.push(removed);
+    const count = Math.min(target.hand.length, Math.max(1, amount));
+    for (let i = 0; i < count; i++) target.hand.splice(Math.floor(Math.random() * target.hand.length), 1);
+    resultText = `${target.name}のカードを${count}枚消去`;
+  } else if (used.effect === "forget_magic") {
+    const magics = target.hand.filter(card => card.type === "magic");
+    const count = Math.min(magics.length, Math.max(1, amount));
+    for (let i = 0; i < count; i++) {
+      const selected = magics.splice(Math.floor(Math.random() * magics.length), 1)[0];
+      if (selected) removeCardFromHand(target, selected.uid);
     }
-    resultText = `${discardCount}枚を捨て札へ`;
+    resultText = `${target.name}の魔法を${count}枚忘れさせた`;
   } else if (used.effect === "random_event") {
-    if (Math.random() < 0.5) healPlayer(game, actor, amount || 10);
-    else actor.mp = Math.min(actor.maxMp, actor.mp + (amount || 10));
-    resultText = "ランダムな恵みが発生";
+    const resource = ["hp", "mp", "gold"][Math.floor(Math.random() * 3)];
+    target[resource] = Math.min(99, target[resource] + (amount || 10));
+    resultText = `${target.name}の${resource === "hp" ? "HP" : resource === "mp" ? "MP" : "ゴールド"}が+${amount || 10}`;
   } else if (used.effect === "mp_free_magic") {
-    actor.freeMagicUses += 1;
-    resultText = "次の魔法のMP消費が0";
+    target.freeMagicUses += 1;
+    resultText = `${target.name}の次の魔法のMP消費が0`;
   } else if (used.effect === "revive") {
-    actor.revivePower = Math.max(actor.revivePower, amount || 10);
-    resultText = `HP0時に${actor.revivePower}で復活`;
+    target.revivePower = Math.max(target.revivePower, amount || 10);
+    resultText = `${target.name}がHP0時に${target.revivePower}で復活`;
   }
 
   if (used.statusEffect && used.statusEffect !== "none" && !["inflict_status", "cure_status"].includes(used.effect)) {
-    const statusTarget = used.target === "self" ? actor : target;
-    applyStatusEffect(game, statusTarget, used.statusEffect);
+    applyStatusEffect(game, target, used.statusEffect);
   }
 
-  game.discard.push(used);
-
+  game.hitResult = used.type === "magic" && Number(used.effectChance ?? 100) < 100
+    ? { hit, text: hit ? "魔法が命中！" : "魔法は外れました" }
+    : null;
   game.lastBattle = {
     attackerId: game.attackerId,
-    defenderId: game.attackerId,
+    defenderId: resolvedTargetId,
     attackCard: used,
     defenseCards: [],
-    attack: 0,
+    attack: used.attack || amount,
     defense: 0,
     damage: resultText
   };
-
+  game.selectedUtilityUid = null;
   drawCards(game, actor, 1);
   checkWinner(game);
+  game.logs.unshift(`${used.name}: ${resultText}。`);
+  if (!game.winner) passTurn(game);
+  return true;
+}
 
-  if (!game.winner) {
-    game.logs.unshift(`${used.name}を使用したためターン終了。`);
-    passTurn(game);
+function beginTrade(game, uid) {
+  if (game.busy || game.winner || game.phase !== "attack") return false;
+  const actor = getActor(game);
+  const card = actor.hand.find(candidate => candidate.uid === uid);
+  if (!card || !["sell", "buy", "exchange"].includes(card.effect)) return false;
+  if (actor.isCpu) return executeCpuTrade(game, uid);
+
+  game.selectedUtilityUid = uid;
+  game.pendingTrade = { tradeCardUid: uid, effect: card.effect };
+  game.phase = card.effect === "sell" ? "sell_card" : card.effect === "buy" ? "buy_target" : "exchange";
+  game.logs.unshift(card.effect === "sell"
+    ? "売りたいカードを自分の手札から選んでください。"
+    : card.effect === "buy"
+      ? "購入先のプレイヤーを選んでください。"
+      : "HP・MP・ゴールドの配分を決めてください。");
+  return true;
+}
+
+function selectSellCard(game, uid) {
+  if (game.busy || game.winner || game.phase !== "sell_card" || !game.pendingTrade) return false;
+  const actor = getActor(game);
+  const card = actor.hand.find(candidate => candidate.uid === uid && candidate.uid !== game.pendingTrade.tradeCardUid);
+  if (!card) return false;
+  game.pendingTrade.saleCardUid = uid;
+  game.focusedCard = card;
+  game.phase = "sell_target";
+  game.logs.unshift(`「${card.name}」（￥${card.price || 0}）の売却先を選んでください。`);
+  return true;
+}
+
+function finishTradeUse(game, actor, tradeCardUid, message) {
+  const tradeCard = removeCardFromHand(actor, tradeCardUid);
+  if (tradeCard) drawCards(game, actor, 1);
+  game.lastBattle = tradeCard ? {
+    attackerId: game.attackerId,
+    defenderId: game.attackerId,
+    attackCard: tradeCard,
+    defenseCards: [],
+    attack: 0,
+    defense: 0,
+    damage: message
+  } : game.lastBattle;
+  game.pendingTrade = null;
+  game.selectedUtilityUid = null;
+  game.logs.unshift(message);
+  checkWinner(game);
+  if (!game.winner) passTurn(game);
+}
+
+function completeSale(game, buyerId) {
+  if (game.phase !== "sell_target" || !game.pendingTrade?.saleCardUid) return false;
+  const seller = getActor(game);
+  const buyer = game[buyerId];
+  if (!buyer || buyer === seller) return false;
+  const card = seller.hand.find(candidate => candidate.uid === game.pendingTrade.saleCardUid);
+  if (!card) return false;
+  const price = Math.max(0, Number(card.price || 0));
+  let message;
+  if (buyer.gold < price) {
+    message = `${buyer.name}は￥${price}を持っていないため「${card.name}」を買えませんでした。`;
+  } else {
+    buyer.gold -= price;
+    seller.gold = Math.min(99, seller.gold + price);
+    removeCardFromHand(seller, card.uid);
+    buyer.hand.push(card);
+    message = `${seller.name}は${buyer.name}へ「${card.name}」を￥${price}で売りました。`;
   }
+  finishTradeUse(game, seller, game.pendingTrade.tradeCardUid, message);
+  return true;
+}
+
+function preparePurchaseOffer(game, sellerId) {
+  if (game.phase !== "buy_target" || !game.pendingTrade) return false;
+  const buyer = getActor(game);
+  const seller = game[sellerId];
+  if (!seller || seller === buyer) return false;
+  const candidates = seller.hand.filter(card => card.uid !== game.pendingTrade.tradeCardUid);
+  if (candidates.length === 0) {
+    finishTradeUse(game, buyer, game.pendingTrade.tradeCardUid, `${seller.name}に購入できるカードがありません。`);
+    return true;
+  }
+  const offer = candidates[Math.floor(Math.random() * candidates.length)];
+  game.pendingTrade.sellerId = sellerId;
+  game.pendingTrade.offerCardUid = offer.uid;
+  game.focusedCard = offer;
+  game.phase = "buy_offer";
+  game.logs.unshift(`${seller.name}から「${offer.name}」（￥${offer.price || 0}）が提示されました。`);
+  return true;
+}
+
+function confirmPurchase(game, accept) {
+  if (game.phase !== "buy_offer" || !game.pendingTrade?.offerCardUid) return false;
+  const buyer = getActor(game);
+  const seller = game[game.pendingTrade.sellerId];
+  const offer = seller?.hand.find(card => card.uid === game.pendingTrade.offerCardUid);
+  let message = "購入を見送りました。";
+  if (accept && offer) {
+    const price = Math.max(0, Number(offer.price || 0));
+    if (buyer.gold < price) {
+      message = `ゴールドが不足しています。購入には￥${price}必要です。`;
+    } else {
+      buyer.gold -= price;
+      seller.gold = Math.min(99, seller.gold + price);
+      removeCardFromHand(seller, offer.uid);
+      buyer.hand.push(offer);
+      message = `${buyer.name}は「${offer.name}」を￥${price}で購入しました。`;
+    }
+  }
+  finishTradeUse(game, buyer, game.pendingTrade.tradeCardUid, message);
+  return true;
+}
+
+function confirmExchange(game, hp, mp, gold) {
+  if (game.phase !== "exchange" || !game.pendingTrade) return false;
+  const actor = getActor(game);
+  const values = [hp, mp, gold].map(Number);
+  const total = actor.hp + actor.mp + actor.gold;
+  if (values.some(value => !Number.isInteger(value) || value < 0 || value > 99) || values.reduce((sum, value) => sum + value, 0) !== total) {
+    game.logs.unshift(`合計${total}になるよう、各値を0～99で配分してください。`);
+    return false;
+  }
+  [actor.hp, actor.mp, actor.gold] = values;
+  finishTradeUse(game, actor, game.pendingTrade.tradeCardUid, `両替: HP${hp}・MP${mp}・￥${gold}に配分しました。`);
+  return true;
+}
+
+function executeCpuTrade(game, uid) {
+  const actor = getActor(game);
+  const target = game[opponentId(game.attackerId)];
+  const tradeCard = actor.hand.find(card => card.uid === uid);
+  if (!tradeCard) return false;
+  game.pendingTrade = { tradeCardUid: uid, effect: tradeCard.effect };
+
+  if (tradeCard.effect === "sell") {
+    const sale = actor.hand.find(card => card.uid !== uid && !["sell", "buy", "exchange"].includes(card.effect));
+    if (sale && target.gold >= Number(sale.price || 0)) {
+      const price = Number(sale.price || 0);
+      target.gold -= price;
+      actor.gold = Math.min(99, actor.gold + price);
+      removeCardFromHand(actor, sale.uid);
+      target.hand.push(sale);
+      finishTradeUse(game, actor, uid, `CPUは「${sale.name}」をあなたへ￥${price}で売りました。`);
+    } else {
+      finishTradeUse(game, actor, uid, "CPUの売却は成立しませんでした。");
+    }
+  } else if (tradeCard.effect === "buy") {
+    const offer = target.hand[Math.floor(Math.random() * target.hand.length)];
+    if (offer && actor.gold >= Number(offer.price || 0)) {
+      const price = Number(offer.price || 0);
+      actor.gold -= price;
+      target.gold = Math.min(99, target.gold + price);
+      removeCardFromHand(target, offer.uid);
+      actor.hand.push(offer);
+      finishTradeUse(game, actor, uid, `CPUはあなたから「${offer.name}」を￥${price}で買いました。`);
+    } else {
+      finishTradeUse(game, actor, uid, "CPUは購入を見送りました。");
+    }
+  } else {
+    const total = actor.hp + actor.mp + actor.gold;
+    const hp = Math.min(99, Math.max(40, Math.ceil(total * 0.55)));
+    const mp = Math.min(99, Math.max(10, Math.floor((total - hp) / 2)));
+    actor.hp = hp;
+    actor.mp = mp;
+    actor.gold = total - hp - mp;
+    finishTradeUse(game, actor, uid, `CPUはHP${actor.hp}・MP${actor.mp}・￥${actor.gold}に両替しました。`);
+  }
+  return true;
 }
 
 function prayAndEndTurn(game, player) {
   if (game.busy || game.winner || game.phase !== "attack") return;
-
   if (playerHasWeapon(player)) {
     game.logs.unshift("手札に武器があるため祈れません。");
     return;
   }
-
   drawCard(game, player);
-  game.logs.unshift(`${player.name}は祈ってカードを1枚引きました。`);
-  game.logs.unshift("祈ったためターン終了。");
+  game.logs.unshift(`${player.name}は祈ってカードを1枚授かりました。`);
   passTurn(game);
 }
 
 function toggleDefenseCard(game, uid) {
-  if (game.busy || game.winner || game.phase !== "defense") return;
-
+  if (game.busy || game.winner || game.phase !== "defense" || !game.pendingAttack?.hit) return;
   const defender = getDefender(game);
   if (defender.isCpu) return;
-
-  const card = defender.hand.find(c => c.uid === uid);
+  const card = defender.hand.find(candidate => candidate.uid === uid);
   if (!isDefenseCard(card)) return;
-
   game.focusedCard = card;
 
   if (defender.selectedDefense.includes(uid)) {
     defender.selectedDefense = defender.selectedDefense.filter(id => id !== uid);
   } else if (defender.statuses.includes("flash")) {
     defender.selectedDefense = [uid];
-    game.logs.unshift(`${defender.name}は閃光のため防御カードを1枚しか使えません。`);
+    game.logs.unshift(`${defender.name}は閃光のためエンチャントを1枚しか使えません。`);
   } else {
     defender.selectedDefense.push(uid);
   }
@@ -339,89 +573,82 @@ function toggleDefenseCard(game, uid) {
 
 function getSelectedDefenseCards(defender) {
   return defender.selectedDefense
-    .map(uid => defender.hand.find(c => c.uid === uid))
+    .map(uid => defender.hand.find(card => card.uid === uid))
     .filter(Boolean);
+}
+
+function applyDefenseReactions(game, defenseCards, attacker, defender, damage) {
+  if (damage <= 0) return;
+  defenseCards.forEach(card => {
+    const chance = Number(card.effectChance ?? 100) / 100;
+    if (Math.random() > chance) return;
+    if (card.effect === "inflict_status") {
+      applyStatusEffect(game, card.target === "self" ? defender : attacker, card.statusEffect);
+    } else if (card.effect === "counter_attack") {
+      const counter = card.effectPower > 0 ? damage * card.effectPower : damage;
+      attacker.hp = Math.max(0, attacker.hp - counter);
+      game.logs.unshift(`${card.name}が${counter}ダメージで反撃しました。`);
+    } else if (card.effect === "mp_gain_on_damage") {
+      defender.mp = Math.min(defender.maxMp, defender.mp + damage * (card.effectPower || 2));
+    } else if (card.effect === "steal_gold_on_damage") {
+      const stolen = Math.min(attacker.gold, damage);
+      attacker.gold -= stolen;
+      defender.gold = Math.min(99, defender.gold + stolen);
+      game.logs.unshift(`${defender.name}は${attacker.name}から￥${stolen}没収しました。`);
+    }
+  });
 }
 
 function resolvePendingAttack(game) {
   if (!game.pendingAttack || game.winner) return;
-
   game.phase = "resolving";
   game.busy = true;
+  const pending = game.pendingAttack;
+  const attacker = game[pending.attackerId];
+  const defender = game[pending.defenderId];
+  const defenseCards = pending.hit ? getSelectedDefenseCards(defender) : [];
+  const defenseTotal = defenseCards.reduce((sum, card) => sum + (card.defense || 0), 0);
+  const perHitDamage = pending.hit ? Math.max(0, pending.attack - defenseTotal) : 0;
+  const damage = perHitDamage * Math.max(1, pending.hitCount || 1);
 
-  const attacker = game[game.pendingAttack.attackerId];
-  const defender = game[game.pendingAttack.defenderId];
-
-  const defenseCards = getSelectedDefenseCards(defender);
-  const defenseTotal = defenseCards.reduce((s, c) => s + (c.defense || 0), 0);
-  const attackCard = game.pendingAttack.card;
-  const hitChance = (attackCard.effectChance ?? 100) / 100;
-  const canMiss = (attackCard.isAllAttack || attackCard.effect === "all_attack") && hitChance < 1;
-  const unavoidable = defender.statuses.includes("dark_cloud");
-  const hit = !canMiss || unavoidable || Math.random() <= hitChance;
-  const damage = hit ? Math.max(0, game.pendingAttack.attack - defenseTotal) : 0;
-
-  defenseCards.forEach(card => {
-    removeCardFromHand(defender, card.uid);
-    game.discard.push(card);
-  });
-
-  game.discard.push(game.pendingAttack.card);
+  defenseCards.forEach(card => removeCardFromHand(defender, card.uid));
   defender.hp = Math.max(0, defender.hp - damage);
-  if (damage > 0 && attackCard.effect === "instant_defeat") defender.hp = 0;
-
-  const chance = (attackCard.effectChance ?? 100) / 100;
-  if (damage > 0 && attackCard.statusEffect && attackCard.statusEffect !== "none" && Math.random() <= chance) {
-    applyStatusEffect(game, defender, attackCard.statusEffect);
+  if (damage > 0 && pending.card.effect === "instant_defeat") defender.hp = 0;
+  if (damage > 0 && pending.card.statusEffect && pending.card.statusEffect !== "none") {
+    applyStatusEffect(game, defender, pending.card.statusEffect);
   }
-  defenseCards
-    .filter(card => card.effect === "inflict_status")
-    .forEach(card => {
-      const defenseChance = (card.effectChance ?? 100) / 100;
-      if (Math.random() <= defenseChance) {
-        applyStatusEffect(game, card.target === "self" ? defender : attacker, card.statusEffect);
-      }
-    });
-  if (damage > 0 && attackCard.effect === "hp_drain") healPlayer(game, attacker, damage);
-  if (attackCard.effect === "self_damage") attacker.hp = Math.max(0, attacker.hp - damage);
+  if (damage > 0 && pending.card.effect === "hp_drain") healPlayer(game, attacker, damage);
+  if (pending.card.effect === "self_damage") attacker.hp = Math.max(0, attacker.hp - damage);
+  applyDefenseReactions(game, defenseCards, attacker, defender, damage);
 
   game.lastBattle = {
-    attackerId: game.pendingAttack.attackerId,
-    defenderId: game.pendingAttack.defenderId,
-    attackCard: game.pendingAttack.card,
+    attackerId: pending.attackerId,
+    defenderId: pending.defenderId,
+    attackCard: pending.card,
     defenseCards,
-    attack: game.pendingAttack.attack,
+    attack: pending.attack,
     defense: defenseTotal,
-    damage
+    hitCount: pending.hitCount,
+    damage: pending.hit ? damage : "💨 外れ"
   };
-
   const defenseText = defenseCards.length
-    ? defenseCards.map(c => `${c.name}(${c.defense})`).join(" + ")
+    ? defenseCards.map(card => `${card.name}(${card.defense})`).join(" + ")
     : "防御なし";
-
-  game.logs.unshift(`${defender.name}の防御: ${defenseText}`);
-  game.logs.unshift(hit
-    ? `攻撃${game.pendingAttack.attack} - 防御${defenseTotal} = ${damage}ダメージ。`
-    : `${attackCard.name}は外れました。`);
-
-  const attackerDraw = 1;
-  const defenderDraw = defenseCards.length;
+  if (pending.hit) {
+    game.logs.unshift(`${defender.name}の防御: ${defenseText}`);
+    game.logs.unshift(`${pending.attack}${pending.hitCount > 1 ? `×${pending.hitCount}回` : ""} - 防御${defenseTotal} = ${damage}ダメージ。`);
+  }
 
   defender.selectedDefense = [];
   game.pendingAttack = null;
-
-  drawCards(game, attacker, attackerDraw);
-  drawCards(game, defender, defenderDraw);
-
+  drawCards(game, attacker, 1);
+  drawCards(game, defender, defenseCards.length);
   checkWinner(game);
-  window.renderGame();
-
+  renderNow();
   setTimeout(() => {
     game.busy = false;
-    if (!game.winner) {
-      passTurn(game);
-    }
-    window.renderGame();
+    if (!game.winner) passTurn(game);
+    renderNow();
   }, RESOLVE_DELAY);
 }
 
@@ -433,43 +660,40 @@ function healPlayer(game, player, amount) {
 
 function passTurn(game) {
   if (game.winner) return;
-
   const endingPlayer = game[game.turn];
   processEndOfTurnStatuses(game, endingPlayer);
   runGuardianAfterTurn(game, endingPlayer);
   checkWinner(game);
   if (game.winner) {
-    window.renderGame();
+    renderNow();
     return;
   }
 
-  game.turn = game.turn === "player" ? "enemy" : "player";
+  game.turn = opponentId(game.turn);
   game.attackerId = game.turn;
-  game.defenderId = game.turn === "player" ? "enemy" : "player";
+  game.defenderId = opponentId(game.turn);
   game.phase = "attack";
   game.selectedAttackUid = null;
   game.selectedAttackCard = null;
+  game.selectedUtilityUid = null;
+  game.pendingTrade = null;
+  game.hitResult = null;
+  game.logs.unshift(`${getActor(game).name}のターンです。`);
 
-  const actor = getActor(game);
-  game.logs.unshift(`${actor.name}の攻撃フェーズです。`);
-
-  if (actor.isCpu && !game.winner) {
+  if (getActor(game).isCpu) {
     game.busy = true;
-    window.renderGame();
-
+    renderNow();
     setTimeout(() => {
       cpuTakeAttackAction(game);
-      window.renderGame();
+      renderNow();
     }, CPU_DELAY);
   }
 }
 
 function applyStatusEffect(game, player, status) {
   if (!status || status === "none" || status === "all") return false;
-
   const incomingDisease = DISEASE_CHAIN.indexOf(status);
   const currentDisease = DISEASE_CHAIN.findIndex(item => player.statuses.includes(item));
-
   if (incomingDisease !== -1 && currentDisease !== -1) {
     player.statuses = player.statuses.filter(item => !DISEASE_CHAIN.includes(item));
     if (currentDisease === DISEASE_CHAIN.length - 1) {
@@ -482,7 +706,6 @@ function applyStatusEffect(game, player, status) {
     game.logs.unshift(`${player.name}の災いが${STATUS_EFFECTS[worsened]}へ悪化しました。`);
     return true;
   }
-
   if (player.statuses.includes(status)) return false;
   player.statuses.push(status);
   game.logs.unshift(`${player.name}は${STATUS_EFFECTS[status] || status}になりました。`);
@@ -492,25 +715,19 @@ function applyStatusEffect(game, player, status) {
 function processEndOfTurnStatuses(game, player) {
   const disease = DISEASE_CHAIN.find(status => player.statuses.includes(status));
   const hpChange = { cold: -1, fever: -2, hell: -5, heaven: 5 }[disease] || 0;
-
   if (hpChange < 0) {
     player.hp = Math.max(0, player.hp + hpChange);
     game.logs.unshift(`${STATUS_EFFECTS[disease]}により${player.name}のHPが${-hpChange}減りました。`);
   } else if (hpChange > 0) {
-    const before = player.hp;
-    player.hp = Math.min(player.maxHp, player.hp + hpChange);
-    game.logs.unshift(`${STATUS_EFFECTS[disease]}により${player.name}のHPが${player.hp - before}回復しました。`);
+    healPlayer(game, player, hpChange);
   }
-
   if (!disease || player.hp <= 0 || Math.random() > 0.05) return;
-
   const index = DISEASE_CHAIN.indexOf(disease);
   if (index === DISEASE_CHAIN.length - 1) {
     player.hp = 0;
     game.logs.unshift(`${player.name}の天国病が発作を起こしました。`);
     return;
   }
-
   player.statuses = player.statuses.filter(status => status !== disease);
   const worsened = DISEASE_CHAIN[index + 1];
   player.statuses.push(worsened);
@@ -525,15 +742,17 @@ function checkWinner(game) {
       game.logs.unshift(`${player.name}は太陽の加護で復活しました。`);
     }
   });
-
-  if (game.player.hp <= 0) {
+  if (game.player.hp <= 0 && game.enemy.hp <= 0) {
+    game.winner = "draw";
+    game.phase = "ended";
+    game.busy = false;
+    game.logs.unshift("引き分けです。");
+  } else if (game.player.hp <= 0) {
     game.winner = "enemy";
     game.phase = "ended";
     game.busy = false;
     game.logs.unshift("あなたは敗北しました。");
-  }
-
-  if (game.enemy.hp <= 0) {
+  } else if (game.enemy.hp <= 0) {
     game.winner = "player";
     game.phase = "ended";
     game.busy = false;

@@ -32,7 +32,10 @@ const CARD_EFFECTS = {
     ["evade", "確率で回避"],
     ["mp_free_magic", "MP消費なしで魔法を使用"],
     ["on_defeat_heal", "HP0時に回復"],
-    ["counter_attack", "攻撃者へ反撃"]
+    ["counter_attack", "攻撃者へ反撃"],
+    ["mp_gain_on_damage", "被ダメージに応じてMP回復"],
+    ["steal_gold_on_damage", "被ダメージに応じてゴールド没収"],
+    ["element_change", "攻撃属性を変更"]
   ],
   magic: [
     ["magic_attack", "単体魔法攻撃"],
@@ -44,8 +47,11 @@ const CARD_EFFECTS = {
     ["inflict_status", "災いを付与"],
     ["cure_status", "災いを解除"],
     ["summon_guardian", "守護神を召喚"],
+    ["gold_gain", "ゴールドを増やす"],
     ["dispel", "強化・守護を解除"],
     ["draw", "カードを引く"],
+    ["double_attack", "次の単体武器を2倍"],
+    ["sure_all_attack", "次の単体武器を必中全体化"],
     ["discard", "カードを捨てさせる"],
     ["revive", "復活"],
     ["random_effect", "ランダム効果"]
@@ -63,7 +69,9 @@ const CARD_EFFECTS = {
     ["forget_magic", "習得魔法を忘れさせる"],
     ["revive", "HP0時に復活"],
     ["self_damage", "自分にダメージ"],
-    ["trade", "取引"],
+    ["sell", "カードを売る"],
+    ["buy", "カードを買う"],
+    ["exchange", "HP・MP・ゴールドを両替"],
     ["custom", "自由設定"]
   ]
 };

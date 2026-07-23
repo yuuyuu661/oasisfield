@@ -86,13 +86,13 @@ button:disabled {
 
 .game-layout {
   display: grid;
-  grid-template-columns: 270px 1fr 270px;
-  grid-template-rows: 370px minmax(260px, auto) 220px;
+  grid-template-columns: minmax(0, 1fr) 290px;
+  grid-template-rows: minmax(430px, auto) minmax(260px, auto) 220px;
   gap: 10px;
   grid-template-areas:
-    "progress stage players"
-    "hand hand detail"
-    "log log detail";
+    "stage players"
+    "hand detail"
+    "log detail";
 }
 
 .panel {
@@ -113,7 +113,6 @@ button:disabled {
   padding-bottom: 5px;
 }
 
-.progress-panel { grid-area: progress; }
 .battle-stage { grid-area: stage; }
 .players-panel { grid-area: players; }
 .hand-panel { grid-area: hand; }
@@ -128,6 +127,44 @@ button:disabled {
   padding: 7px 10px;
   border-radius: 999px;
   font-weight: 1000;
+}
+
+.stage-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.stage-heading .stage-title {
+  flex: 1;
+}
+
+.battle-message {
+  min-height: 24px;
+  margin: 6px 0;
+  font-weight: 800;
+}
+
+.hit-result {
+  width: fit-content;
+  margin: 7px auto;
+  padding: 9px 18px;
+  border-radius: 999px;
+  font-size: 19px;
+  font-weight: 1000;
+  animation: pop .35s ease;
+}
+
+.hit-result.hit {
+  background: #fff1a8;
+  color: #6b4d00;
+  box-shadow: 0 0 0 4px rgba(255, 211, 77, .28);
+}
+
+.hit-result.miss {
+  background: #dce9ee;
+  color: #405b65;
 }
 
 .turn-box p {
@@ -181,6 +218,65 @@ button:disabled {
   grid-template-columns: minmax(0, 1fr) 120px minmax(0, 1.35fr);
   gap: 12px;
   align-items: center;
+}
+
+.battle-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.target-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.interaction-panel {
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.5);
+}
+
+.trade-offer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.exchange-box {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(90px, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.exchange-box > strong,
+.exchange-box > button,
+.exchange-box > p {
+  grid-column: 1 / -1;
+}
+
+.exchange-box label {
+  display: grid;
+  gap: 4px;
+  font-weight: 900;
+}
+
+.exchange-box input,
+.catalog-filter select {
+  width: 100%;
+  border: 2px solid rgba(6,59,44,.18);
+  border-radius: 9px;
+  padding: 7px;
+  font: inherit;
+}
+
+#exchangeError {
+  margin: 0;
+  color: #be123c;
+  font-weight: 900;
 }
 
 .combat-side {
@@ -731,6 +827,17 @@ button:disabled {
   border-bottom: 2px solid rgba(6,59,44,.16);
 }
 
+.catalog-filter {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 10px;
+  font-weight: 900;
+}
+
+.reset-card-btn {
+  background: rgba(255,255,255,.75) !important;
+}
+
 .standard-card .admin-card-body p {
   margin: 2px 0 0;
 }
@@ -741,7 +848,6 @@ button:disabled {
     grid-template-rows: auto;
     grid-template-areas:
       "players"
-      "progress"
       "stage"
       "hand"
       "detail"
@@ -755,5 +861,9 @@ button:disabled {
 
   .combat-flow {
     height: auto;
+  }
+
+  .exchange-box {
+    grid-template-columns: 1fr;
   }
 }
