@@ -13,7 +13,8 @@ function createPlayer(name, isCpu = false) {
     name,
     isCpu,
     hp: 40,
-    maxHp: 99,
+    maxHp: 40,
+    hpCap: 99,
     mp: 10,
     maxMp: 99,
     gold: 20,
@@ -376,6 +377,7 @@ function useUtilityAndEndTurn(game, uid, targetId) {
   } else if (used.effect === "random_event") {
     const resource = ["hp", "mp", "gold"][Math.floor(Math.random() * 3)];
     target[resource] = Math.min(99, target[resource] + (amount || 10));
+    if (resource === "hp") target.maxHp = Math.max(target.maxHp, target.hp);
     resultText = `${target.name}の${resource === "hp" ? "HP" : resource === "mp" ? "MP" : "ゴールド"}が+${amount || 10}`;
   } else if (used.effect === "mp_free_magic") {
     target.freeMagicUses += 1;
@@ -532,6 +534,7 @@ function confirmExchange(game, hp, mp, gold) {
     return false;
   }
   [actor.hp, actor.mp, actor.gold] = values;
+  actor.maxHp = Math.max(actor.maxHp, actor.hp);
   finishTradeUse(game, actor, game.pendingTrade.tradeCardUid, `両替: HP${hp}・MP${mp}・￥${gold}に配分しました。`);
   return true;
 }
@@ -572,6 +575,7 @@ function executeCpuTrade(game, uid) {
     const hp = Math.min(99, Math.max(40, Math.ceil(total * 0.55)));
     const mp = Math.min(99, Math.max(10, Math.floor((total - hp) / 2)));
     actor.hp = hp;
+    actor.maxHp = Math.max(actor.maxHp, actor.hp);
     actor.mp = mp;
     actor.gold = total - hp - mp;
     finishTradeUse(game, actor, uid, `CPUはHP${actor.hp}・MP${actor.mp}・￥${actor.gold}に両替しました。`);
@@ -693,7 +697,8 @@ function resolvePendingAttack(game) {
 
 function healPlayer(game, player, amount) {
   const before = player.hp;
-  player.hp = Math.min(player.maxHp, player.hp + amount);
+  player.hp = Math.min(player.hpCap || 99, player.hp + amount);
+  player.maxHp = Math.max(player.maxHp, player.hp);
   game.logs.unshift(`${player.name}はHPを${player.hp - before}回復しました。`);
 }
 

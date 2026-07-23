@@ -63,8 +63,8 @@ function renderHp() {
   const enemyHidden = game.player.statuses.includes("fog");
   updateBar(els.enemyHpBar, enemyHidden ? 0 : game.enemy.hp, game.enemy.maxHp);
 
-  els.playerHpText.textContent = `HP ${game.player.hp}`;
-  els.enemyHpText.textContent = enemyHidden ? "HP ???" : `HP ${game.enemy.hp}`;
+  els.playerHpText.textContent = `HP ${game.player.hp} / ${game.player.maxHp}`;
+  els.enemyHpText.textContent = enemyHidden ? "HP ?? / ??" : `HP ${game.enemy.hp} / ${game.enemy.maxHp}`;
   els.playerMpText.textContent = `MP ${game.player.mp}`;
   els.enemyMpText.textContent = enemyHidden ? "MP ??" : `MP ${game.enemy.mp}`;
   els.playerGoldText.textContent = `￥${game.player.gold}`;

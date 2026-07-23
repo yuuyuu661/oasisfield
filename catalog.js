@@ -248,6 +248,24 @@ const OASIS_ITEMS = [
   item("めぐみの妖精", { effectPower: 10, effect: "random_event", target: "self" })
 ];
 
+function assignCatalogArt(cards, startIndex) {
+  cards.forEach((card, index) => {
+    card.image = oasisArtPath(startIndex + index);
+  });
+}
+
+// The generated artwork set was produced in category batches. Seven all-target
+// weapons were added later, and the final three armors were rendered after magic.
+// Keep the name-to-art relationship explicit instead of relying on catalog order.
+assignCatalogArt(OASIS_SINGLE_WEAPONS, 1);
+assignCatalogArt(OASIS_ADDITIONAL_WEAPONS, 69);
+assignCatalogArt(OASIS_ALL_WEAPONS.slice(0, 11), 90);
+assignCatalogArt(OASIS_ALL_WEAPONS.slice(11), 236);
+assignCatalogArt(OASIS_ARMORS.slice(0, 75), 101);
+assignCatalogArt(OASIS_ARMORS.slice(75), 206);
+assignCatalogArt(OASIS_MAGICS, 176);
+assignCatalogArt(OASIS_ITEMS, 209);
+
 const OASIS_CATALOG_CARDS = [
   ...OASIS_SINGLE_WEAPONS,
   ...OASIS_ADDITIONAL_WEAPONS,

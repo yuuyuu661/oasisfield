@@ -73,12 +73,18 @@ function runGuardianAfterTurn(game, endingPlayer) {
   }
   if (action.draw) drawCards(game, owner, action.draw);
   if (action.cure) owner.statuses = [];
-  if (action.heal) owner.hp = Math.min(owner.maxHp, owner.hp + action.heal);
+  if (action.heal) {
+    owner.hp = Math.min(owner.hpCap || 99, owner.hp + action.heal);
+    owner.maxHp = Math.max(owner.maxHp, owner.hp);
+  }
   if (action.mp) owner.mp = Math.min(owner.maxMp, owner.mp + action.mp);
   if (action.status && !action.attack) applyStatusEffect(game, target, action.status);
   if (action.attack && Math.random() <= ((action.chance ?? 100) / 100)) {
     target.hp = Math.max(0, target.hp - action.attack);
-    if (action.drain) owner.hp = Math.min(owner.maxHp, owner.hp + action.attack);
+    if (action.drain) {
+      owner.hp = Math.min(owner.hpCap || 99, owner.hp + action.attack);
+      owner.maxHp = Math.max(owner.maxHp, owner.hp);
+    }
     if (action.status && target.hp > 0) applyStatusEffect(game, target, action.status);
   }
   game.logs.unshift(`${guardian.name}の「${action.name}」が発動しました。`);
