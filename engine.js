@@ -223,6 +223,56 @@ function rollAttackHit(card, defender) {
   return Math.random() * 100 < chance;
 }
 
+function combineAttackElements(cards) {
+  const usedCards = cards.filter(Boolean);
+  const forced = [...usedCards].reverse().find(card =>
+    ["発火のワンド", "魔水のワンド"].includes(card.sourceName || card.name)
+  );
+  if (forced?.element && forced.element !== "none") return forced.element;
+
+  const elements = [...new Set(usedCards.map(card => card.element || "none"))];
+  if (elements.length === 1) return elements[0];
+  if (
+    elements.length === 2
+    && elements.includes("light")
+    && elements.some(element => ["fire", "water", "wood", "earth"].includes(element))
+  ) {
+    return elements.find(element => element !== "light");
+  }
+  return "none";
+}
+
+function defenseElementCanBlock(attackElement, defenseElement) {
+  const attack = attackElement || "none";
+  const defense = defenseElement || "none";
+  if (attack === "none" || attack === "dark") return true;
+  if (attack === "light") return false;
+  const relations = {
+    fire: ["water", "light"],
+    water: ["fire", "light"],
+    wood: ["earth", "light"],
+    earth: ["wood", "light"]
+  };
+  return relations[attack]?.includes(defense) || false;
+}
+
+function selectedRainbowCurtain(game) {
+  const defender = getDefender(game);
+  return defender.selectedDefense
+    .map(uid => defender.hand.find(card => card.uid === uid))
+    .some(card => card?.effect === "element_change");
+}
+
+function canUseDefenseCard(game, card) {
+  if (!isDefenseCard(card) || !game.pendingAttack?.hit) return false;
+  const attackElement = game.pendingAttack.element || game.pendingAttack.card?.element || "none";
+  if (card.effect === "element_change") return attackElement !== "none";
+  if (defenseElementCanBlock(attackElement, card.element)) return true;
+  if (getDefender(game).statuses.includes("flash")) return false;
+  if (selectedRainbowCurtain(game)) return true;
+  return false;
+}
+
 function startAttack(game, uid, defenderId) {
   if (game.busy || game.winner || game.phase !== "target") return false;
   const attacker = getActor(game);
@@ -236,11 +286,7 @@ function startAttack(game, uid, defenderId) {
   if (used.effect === "random_target") defenderId = Math.random() < 0.5 ? "player" : "enemy";
   const defender = game[defenderId];
   const additionalAttack = enhancementCards.reduce((sum, card) => sum + Number(card.attack || 0), 0);
-  const attackElement = [...enhancementCards]
-    .reverse()
-    .find(card => card.element && card.element !== "none")?.element
-    || used.element
-    || "none";
+  const attackElement = combineAttackElements([used, ...enhancementCards]);
   let attackValue = ((used.attack || 0) + additionalAttack + (attacker.attackBoost || 0)) * (attacker.attackMultiplier || 1);
   if (used.effect === "mp_scaled_attack") {
     attackValue = attacker.mp * (used.effectPower || 2);
@@ -597,6 +643,10 @@ function useUtilityAndEndTurn(game, uid, targetId) {
   if (used.statusEffect && used.statusEffect !== "none" && !["inflict_status", "cure_status"].includes(used.effect)) {
     applyStatusEffect(game, target, used.statusEffect);
   }
+  if (hit && dealtDamage > 0 && used.element === "dark") {
+    target.hp = 0;
+    resultText += "。闇属性ダメージによりHPが0";
+  }
 
   game.hitResult = used.type === "magic" && Number(used.effectChance ?? 100) < 100
     ? { hit, text: hit ? "魔法が命中！" : "魔法は外れました" }
@@ -816,11 +866,17 @@ function toggleDefenseCard(game, uid) {
   const defender = getDefender(game);
   if (defender.isCpu) return;
   const card = defender.hand.find(candidate => candidate.uid === uid);
-  if (!isDefenseCard(card)) return;
+  if (!canUseDefenseCard(game, card)) return;
   game.focusedCard = card;
 
   if (defender.selectedDefense.includes(uid)) {
     defender.selectedDefense = defender.selectedDefense.filter(id => id !== uid);
+    if (card.effect === "element_change") {
+      defender.selectedDefense = defender.selectedDefense.filter(selectedUid => {
+        const selected = defender.hand.find(candidate => candidate.uid === selectedUid);
+        return canUseDefenseCard(game, selected);
+      });
+    }
   } else if (defender.statuses.includes("flash")) {
     defender.selectedDefense = [uid];
     game.logs.unshift(`${defender.name}は閃光のため防具を1枚しか使えません。`);
@@ -865,7 +921,14 @@ function resolvePendingAttack(game) {
   const pending = game.pendingAttack;
   const attacker = game[pending.attackerId];
   const defender = game[pending.defenderId];
-  const defenseCards = pending.hit ? getSelectedDefenseCards(defender) : [];
+  const selectedDefenseCards = pending.hit ? getSelectedDefenseCards(defender) : [];
+  const rainbowCurtain = selectedDefenseCards.some(card => card.effect === "element_change");
+  const resolvedElement = rainbowCurtain && (pending.element || "none") !== "none"
+    ? "none"
+    : (pending.element || pending.card.element || "none");
+  const defenseCards = selectedDefenseCards.filter(card =>
+    card.effect === "element_change" || defenseElementCanBlock(resolvedElement, card.element)
+  );
   const defenseTotal = defenseCards.reduce((sum, card) => sum + (card.defense || 0), 0);
   const perHitDamage = pending.hit ? Math.max(0, pending.attack - defenseTotal) : 0;
   const damage = perHitDamage * Math.max(1, pending.hitCount || 1);
@@ -873,7 +936,7 @@ function resolvePendingAttack(game) {
   playUsedCardSounds(defenseCards);
   defenseCards.forEach(card => removeCardFromHand(defender, card.uid));
   defender.hp = Math.max(0, defender.hp - damage);
-  if (damage > 0 && pending.card.effect === "instant_defeat") defender.hp = 0;
+  if (damage > 0 && (pending.card.effect === "instant_defeat" || resolvedElement === "dark")) defender.hp = 0;
   if (damage > 0 && pending.card.statusEffect && pending.card.statusEffect !== "none") {
     applyStatusEffect(game, defender, pending.card.statusEffect);
   }
@@ -886,7 +949,8 @@ function resolvePendingAttack(game) {
     defenderId: pending.defenderId,
     attackCard: pending.card,
     attackCards: [pending.card, ...(pending.enhancementCards || [])],
-    element: pending.element || pending.card.element || "none",
+    element: resolvedElement,
+    originalElement: pending.element || pending.card.element || "none",
     defenseCards,
     attack: pending.attack,
     defense: defenseTotal,
@@ -898,7 +962,7 @@ function resolvePendingAttack(game) {
   if (pending.hit && typeof window !== "undefined" && typeof window.playBattleImpact === "function") {
     window.playBattleImpact({
       damage,
-      element: pending.element || pending.card.element || "none",
+      element: resolvedElement,
       blocked: game.lastBattle.blocked
     });
   }

@@ -261,7 +261,7 @@ function renderPhase() {
     els.battleMessage.textContent = "CPUが行動中です。";
   } else if (game.phase === "defense" && game.defenderId === "player") {
     els.phaseBadge.textContent = "命中・あなたの防御";
-    els.battleMessage.textContent = "防具を選び、自分のバトル場またはステータスバーをタップして確定してください。";
+    els.battleMessage.textContent = `${defenseRelationText(game.pendingAttack?.element)} 防具を選び、自分のバトル場またはステータスバーをタップして確定してください。`;
   } else if (game.phase === "defense" && game.defenderId === "enemy") {
     els.phaseBadge.textContent = "命中・CPUの防御";
     els.battleMessage.textContent = "CPUが防御中です。";
@@ -294,6 +294,20 @@ function setDefenseConfirmState(active) {
   els.arenaDefenseCards.tabIndex = active ? 0 : -1;
 }
 
+function defenseRelationText(element) {
+  const label = elementInfo(element)?.label || "無";
+  const relation = {
+    none: "すべての属性の防具で防御できます。",
+    fire: "水・光属性の防具で防御できます。",
+    water: "火・光属性の防具で防御できます。",
+    wood: "土・光属性の防具で防御できます。",
+    earth: "木・光属性の防具で防御できます。",
+    light: "通常の防具では防御できません。虹のカーテンが必要です。",
+    dark: "すべての属性で防御できますが、1ダメージでも受けるとHPが0になります。"
+  }[element || "none"];
+  return `${label}属性攻撃：${relation || "対応する属性の防具を選んでください。"}`;
+}
+
 function setStatusBarTargetState(panel, active) {
   panel.classList.toggle("status-target", active);
   panel.setAttribute("aria-disabled", String(!active));
@@ -303,7 +317,14 @@ function setStatusBarTargetState(panel, active) {
 function currentBattle() {
   if (game.pendingAttack) {
     const defender = getDefender(game);
-    const defenseCards = getSelectedDefenseCards(defender);
+    const selectedDefenseCards = getSelectedDefenseCards(defender);
+    const rainbowCurtain = selectedDefenseCards.some(card => card.effect === "element_change");
+    const element = rainbowCurtain && (game.pendingAttack.element || "none") !== "none"
+      ? "none"
+      : (game.pendingAttack.element || game.pendingAttack.card.element || "none");
+    const defenseCards = selectedDefenseCards.filter(card =>
+      card.effect === "element_change" || defenseElementCanBlock(element, card.element)
+    );
     const defense = defenseCards.reduce((s, c) => s + (c.defense || 0), 0);
 
     return {
@@ -311,7 +332,7 @@ function currentBattle() {
       defenderId: game.pendingAttack.defenderId,
       attackCard: game.pendingAttack.card,
       attackCards: [game.pendingAttack.card, ...(game.pendingAttack.enhancementCards || [])],
-      element: game.pendingAttack.element || game.pendingAttack.card.element || "none",
+      element,
       defenseCards,
       attack: game.pendingAttack.attack,
       hitCount: game.pendingAttack.hitCount,
@@ -331,12 +352,12 @@ function currentBattle() {
           .map(uid => getActor(game).hand.find(card => card.uid === uid))
           .filter(Boolean)
       ],
-      element: game.selectedAttackEnhancementUids
-        .map(uid => getActor(game).hand.find(card => card.uid === uid))
-        .filter(card => card?.element && card.element !== "none")
-        .at(-1)?.element
-        || game.selectedAttackCard.element
-        || "none",
+      element: combineAttackElements([
+        game.selectedAttackCard,
+        ...game.selectedAttackEnhancementUids
+          .map(uid => getActor(game).hand.find(card => card.uid === uid))
+          .filter(Boolean)
+      ]),
       defenseCards: [],
       attack: (game.selectedAttackCard.attack || 0) + game.selectedAttackEnhancementUids
         .map(uid => getActor(game).hand.find(card => card.uid === uid))
@@ -455,7 +476,7 @@ function renderHand() {
       canChooseTurnCards && (card.type === "item" || card.type === "magic")
     );
 
-    const usableAsDefense = canDefense && isDefenseCard(card);
+    const usableAsDefense = canDefense && canUseDefenseCard(game, card);
     const usableAsSale = isSelectingSale && card.uid !== game.pendingTrade?.tradeCardUid;
     const usable = usableAsAttack || usableAsDefense || usableAsSale;
     const selected = game.player.selectedDefense.includes(card.uid)

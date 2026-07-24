@@ -61,8 +61,10 @@ function cpuChooseDefense(game) {
 
   const attack = game.pendingAttack.attack;
   const armors = defender.hand
-    .filter(card => isDefenseCard(card))
+    .filter(card => canUseDefenseCard(game, card))
     .sort((a, b) => (a.defense || 0) - (b.defense || 0));
+
+  const rainbow = armors.find(card => card.effect === "element_change");
 
   if (defender.statuses.includes("flash")) {
     const strongest = [...armors].sort((a, b) => (b.defense || 0) - (a.defense || 0))[0];
@@ -74,9 +76,13 @@ function cpuChooseDefense(game) {
   }
 
   let total = 0;
-  const selected = [];
+  const selected = rainbow ? [rainbow.uid] : [];
+  if (rainbow) defender.selectedDefense = [rainbow.uid];
+  const usableArmors = defender.hand
+    .filter(card => canUseDefenseCard(game, card) && card.uid !== rainbow?.uid)
+    .sort((a, b) => (a.defense || 0) - (b.defense || 0));
 
-  for (const armor of armors) {
+  for (const armor of usableArmors) {
     if (total >= attack) break;
     selected.push(armor.uid);
     total += armor.defense || 0;
