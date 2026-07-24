@@ -779,7 +779,7 @@ button:disabled {
 .hand-card {
   width: 100%;
   min-width: 0;
-  height: 205px;
+  height: 165px;
   border-radius: 14px;
   padding: 8px;
   background: linear-gradient(180deg, #fffdf0, #dff8ee);

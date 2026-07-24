@@ -701,7 +701,6 @@ function cardImageHtml(card) {
 function cardHtml(card) {
   return `
     <div class="card-art">${cardImageHtml(card)}</div>
-    <div class="card-name">${card.name}</div>
     <div class="card-stat">
       <span class="full-card-stat">${statText(card)}</span>
       <span class="mobile-card-stat">${shortStatText(card)}</span>

@@ -317,6 +317,28 @@ assignCatalogArt(OASIS_ARMORS.slice(75), 206);
 assignCatalogArt(OASIS_MAGICS, 176);
 assignCatalogArt(OASIS_ITEMS, 209);
 
+// A missing fire-weapon render shifted this section of the original artwork
+// batch. Pin the affected names explicitly so later catalog edits cannot
+// silently pair them with the neighbouring illustration again.
+const OASIS_SINGLE_WEAPON_ART_OVERRIDES = {
+  "暴れフレイル": oasisArtPath(37),
+  "邪神の大剣": oasisArtPath(38),
+  "ドラゴンクロウ": oasisArtPath(39),
+  "エンゼルアクス": oasisArtPath(40),
+  "神の剣": oasisArtPath(41),
+  "マジカルステッキ": oasisArtPath(42),
+  "たいまつ": oasisArtPath(43),
+  "あちちナイフ": oasisArtPath(44),
+  "燃えムチ": oasisArtPath(45),
+  "ほむら巻き": oasisArtPath(46),
+  "ブレイズブレイド": oasisArtPath(47),
+  "火竜一角": "cards/generated/art-fire-dragon-horn.webp"
+};
+
+OASIS_SINGLE_WEAPONS.forEach(card => {
+  card.image = OASIS_SINGLE_WEAPON_ART_OVERRIDES[card.sourceName] || card.image;
+});
+
 const OASIS_CATALOG_CARDS = [
   ...OASIS_SINGLE_WEAPONS,
   ...OASIS_ADDITIONAL_WEAPONS,
