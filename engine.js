@@ -168,6 +168,24 @@ function opponentId(id) {
   return id === "player" ? "enemy" : "player";
 }
 
+function livingPlayerIds(game) {
+  return ["player", "enemy"].filter(id => Number(game[id]?.hp || 0) > 0);
+}
+
+function randomLivingPlayerId(game) {
+  const candidates = livingPlayerIds(game);
+  return candidates[Math.floor(Math.random() * candidates.length)] || game.attackerId;
+}
+
+function reflectionModeForCard(card) {
+  if (card?.reflectionMode) return card.reflectionMode;
+  const sourceName = card?.sourceName || card?.name || "";
+  if (sourceName === "乱弾武剣" || sourceName === "＜乱気流＞" || sourceName.startsWith("スカイ")) {
+    return "bounce";
+  }
+  return "reflect";
+}
+
 function drawCard(game, player) {
   if (player.hand.length >= MAX_HAND_SIZE) {
     game.logs.unshift(`${player.name}の手札は${MAX_HAND_SIZE}枚のため補充されませんでした。`);
@@ -233,9 +251,17 @@ function selectAttackCard(game, uid) {
   }
 
   if (card.type === "weapon" || card.effect === "attack_defense") {
+    const standaloneEnhancementUid = isAdditionalAttackCard(game.selectedAttackCard)
+      ? game.selectedAttackUid
+      : null;
     game.selectedUtilityUid = null;
     game.selectedAttackUid = uid;
     game.selectedAttackCard = card;
+    if (standaloneEnhancementUid && standaloneEnhancementUid !== uid) {
+      game.selectedAttackEnhancementUids = [
+        ...new Set([...game.selectedAttackEnhancementUids, standaloneEnhancementUid])
+      ];
+    }
     game.phase = "target";
     game.logs.unshift(`「${card.name}」を選択。追加攻撃カードを重ねるか、攻撃対象を選んでください。`);
     return;
@@ -382,12 +408,15 @@ function startAttack(game, uid, defenderId) {
   if (game.busy || game.winner || game.phase !== "target") return false;
   const attacker = getActor(game);
   const playedCard = removeCardFromHand(attacker, uid);
-  if (!playedCard || (playedCard.type !== "weapon" && playedCard.effect !== "attack_defense")) return false;
+  const playedAsAdditional = isAdditionalAttackCard(playedCard);
+  if (!playedCard || (playedCard.type !== "weapon" && playedCard.effect !== "attack_defense" && !playedAsAdditional)) return false;
   const used = dreamTransformCard(
     game,
     attacker,
     playedCard,
-    card => card.type === "weapon" || card.effect === "attack_defense"
+    card => playedAsAdditional
+      ? isAdditionalAttackCard(card)
+      : card.type === "weapon" || card.effect === "attack_defense"
   );
   const enhancementCards = game.selectedAttackEnhancementUids
     .map(selectedUid => removeCardFromHand(attacker, selectedUid))
@@ -396,16 +425,16 @@ function startAttack(game, uid, defenderId) {
   playUsedCardSounds([used, ...enhancementCards]);
 
   if ((used.sourceName || used.name) === "あぶないキネ") {
-    const mortarOwnerId = ["player", "enemy"].find(id => hasPassiveCard(game[id], "あぶないウス"));
+    const mortarOwnerId = livingPlayerIds(game).find(id => hasPassiveCard(game[id], "あぶないウス"));
     if (mortarOwnerId) {
       defenderId = mortarOwnerId;
       damagePlayer(game, game[mortarOwnerId], 99);
       game.logs.unshift(`あぶないキネが、あぶないウスを持つ${game[mortarOwnerId].name}に99ダメージを与えました。`);
     } else {
-      defenderId = Math.random() < 0.5 ? "player" : "enemy";
+      defenderId = randomLivingPlayerId(game);
     }
   } else if (used.effect === "random_target") {
-    defenderId = Math.random() < 0.5 ? "player" : "enemy";
+    defenderId = randomLivingPlayerId(game);
   }
   const defender = game[defenderId];
   const additionalAttack = enhancementCards.reduce((sum, card) => sum + Number(card.attack || 0), 0);
@@ -775,14 +804,15 @@ function useUtilityAndEndTurn(game, uid, targetId) {
 
   if (used.type === "magic" && target !== actor) {
     let ward = null;
-    if (["reflect", "nullify"].includes(target.magicBarrier)) {
+    if (["bounce", "reflect", "nullify"].includes(target.magicBarrier)) {
       ward = target.magicBarrier;
       target.magicBarrier = null;
     }
-    if (ward === "reflect") {
-      game.logs.unshift(`${target.name}は乱気流で「${used.name}」を反射しました。`);
-      resolvedTargetId = game.attackerId;
-      target = actor;
+    if (ward === "bounce" || ward === "reflect") {
+      resolvedTargetId = ward === "bounce" ? randomLivingPlayerId(game) : game.attackerId;
+      const wardOwner = target;
+      target = game[resolvedTargetId];
+      game.logs.unshift(`${wardOwner.name}は乱気流で「${used.name}」を${target.name}へ弾きました。`);
     } else if (ward === "nullify") {
       magicNegated = true;
       hit = false;
@@ -895,8 +925,10 @@ function useUtilityAndEndTurn(game, uid, targetId) {
     target.freeMagicUses += 1;
     resultText = `${target.name}の次の魔法のMP消費が0`;
   } else if (used.effect === "reflect_magic") {
-    target.magicBarrier = "reflect";
-    resultText = `${target.name}が次に受ける奇跡を反射`;
+    target.magicBarrier = reflectionModeForCard(used);
+    resultText = target.magicBarrier === "bounce"
+      ? `${target.name}が次に受ける奇跡をランダムに弾く`
+      : `${target.name}が次に受ける奇跡を攻撃者へ反射`;
   } else if (used.effect === "nullify_magic") {
     target.magicBarrier = (used.sourceName || used.name) === "＜壁＞" ? "wall" : "nullify";
     resultText = target.magicBarrier === "wall"
@@ -1231,15 +1263,16 @@ function resolvePendingAttack(game) {
   damagePlayer(game, defender, damage);
   let reflectedTarget = null;
   if (reflector) {
-    reflectedTarget = (reflector.sourceName || reflector.name) === "乱弾武剣"
-      ? (Math.random() < 0.5 ? game.player : game.enemy)
+    const reflectionMode = reflectionModeForCard(reflector);
+    reflectedTarget = reflectionMode === "bounce"
+      ? game[randomLivingPlayerId(game)]
       : attacker;
     damagePlayer(game, reflectedTarget, pending.attack * Math.max(1, pending.hitCount || 1));
     if (pending.attack > 0 && resolvedElement === "dark") reflectedTarget.hp = 0;
     if (pending.attack <= 0 && pending.card.statusEffect && pending.card.statusEffect !== "none") {
       applyStatusEffect(game, reflectedTarget, pending.card.statusEffect);
     }
-    game.logs.unshift(`${reflector.name}が攻撃を${reflectedTarget.name}へ反射しました。`);
+    game.logs.unshift(`${reflector.name}が攻撃を${reflectedTarget.name}へ${reflectionMode === "bounce" ? "弾きました" : "反射しました"}。`);
   }
   if (nullifier) game.logs.unshift(`${nullifier.name}が奇跡を完全に止めました。`);
   if (damage > 0 && (pending.card.effect === "instant_defeat" || resolvedElement === "dark")) defender.hp = 0;

@@ -167,7 +167,8 @@ const OASIS_ADDITIONAL_WEAPONS = [
   ["発火のワンド", 2, "fire"], ["ファイヤークロスボウ", 4, "fire"], ["魔水のワンド", 5, "water"],
   ["葉っぱ手裏剣", 2, "wood"], ["熟成ゴムの弓", 3, "wood"], ["旧石器ジャベリン", 5, "earth"],
   ["新石器トマホーク", 7, "earth"], ["輝きのカケラ", 1, "light"], ["冥矢", 5, "dark"]
-].map(([name, attack, element = "none"]) => weapon(name, attack, {
+].map(([name, attack, element = "none"]) => catalogCard(name, "enchant", {
+  attack,
   element,
   effect: "add_attack",
   secondaryEffect: name === "スカイハープーン"
@@ -348,6 +349,31 @@ const OASIS_CATALOG_CARDS = [
   ...OASIS_ITEMS
 ];
 
+const OASIS_BOUNCE_CARDS = new Set([
+  "乱弾武剣",
+  "スカイハープーン",
+  "スカイブーツ",
+  "スカイガントレット",
+  "スカイヘルム",
+  "スカイシールド",
+  "スカイアーマー",
+  "＜乱気流＞"
+]);
+
+const OASIS_REFLECT_CARDS = new Set([
+  "反射剣",
+  "月光のオノ",
+  "月光のかぶと",
+  "月光の盾",
+  "月光のよろい",
+  "スーパーミラー"
+]);
+
+OASIS_CATALOG_CARDS.forEach(card => {
+  if (OASIS_BOUNCE_CARDS.has(card.sourceName)) card.reflectionMode = "bounce";
+  if (OASIS_REFLECT_CARDS.has(card.sourceName)) card.reflectionMode = "reflect";
+});
+
 if (typeof globalThis !== "undefined") {
   globalThis.OASIS_CATALOG_CARDS = OASIS_CATALOG_CARDS;
 }
@@ -472,6 +498,12 @@ function catalogDescription(card) {
 
   const chance = Number(card.effectChance ?? 100);
   const chanceText = chance < 100 ? `命中率${chance}%の` : "";
+  if (card.catalogGroup === "additional_weapon") {
+    const base = `追加攻撃+${card.attack}`;
+    if (card.secondaryEffect === "reflect_magic") return `${base}。奇跡を自分を含む生存者の誰かへランダムに弾く。`;
+    if (card.secondaryEffect === "nullify_magic") return `${base}。奇跡を完全に止める。`;
+    return `${base}。`;
+  }
   if (card.type === "weapon") {
     const attackText = card.catalogGroup === "additional_weapon"
       ? `追加攻撃+${card.attack}`
@@ -484,7 +516,11 @@ function catalogDescription(card) {
   }
   if (card.type === "armor") {
     const attackText = card.attack ? `、追加攻撃+${card.attack}` : "";
-    if (card.effect === "reflect_magic") return `防御${card.defense}。奇跡を攻撃者へはね返す。`;
+    if (card.effect === "reflect_magic") {
+      return card.reflectionMode === "bounce"
+        ? `防御${card.defense}。奇跡を自分を含む生存者の誰かへランダムに弾く。`
+        : `防御${card.defense}。奇跡を攻撃者へはね返す。`;
+    }
     if (card.effect === "nullify_magic") return `防御${card.defense}。奇跡を完全に止める。`;
     if (card.effect === "mp_free_magic") return `防御${card.defense}。このカードと同時に使う奇跡のMP消費を0にする。`;
     if (card.effect === "attack_defense") return `攻撃${card.attack}または防御${card.defense}として使用できる。`;

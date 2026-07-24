@@ -699,12 +699,15 @@ function cardImageHtml(card) {
 }
 
 function cardHtml(card) {
-  return `
-    <div class="card-art">${cardImageHtml(card)}</div>
-    <div class="card-stat">
+  const handStat = isAdditionalAttackCard(card)
+    ? `<span class="enchant-hand-stat">+${card.attack || 0}${elementEmoji(card.element)}</span>`
+    : `
       <span class="full-card-stat">${statText(card)}</span>
       <span class="mobile-card-stat">${shortStatText(card)}</span>
-    </div>
+    `;
+  return `
+    <div class="card-art">${cardImageHtml(card)}</div>
+    <div class="card-stat">${handStat}</div>
   `;
 }
 
@@ -748,14 +751,18 @@ function defaultIcon(type) {
 
 function elementInfo(element) {
   return {
-    fire: { label: "火", symbol: "火" },
-    water: { label: "水", symbol: "水" },
-    wood: { label: "木", symbol: "木" },
-    wind: { label: "風", symbol: "風" },
-    earth: { label: "土", symbol: "土" },
-    light: { label: "光", symbol: "光" },
-    dark: { label: "闇", symbol: "闇" }
+    fire: { label: "火", symbol: "火", emoji: "🔥" },
+    water: { label: "水", symbol: "水", emoji: "💧" },
+    wood: { label: "木", symbol: "木", emoji: "🌳" },
+    wind: { label: "風", symbol: "風", emoji: "🌪️" },
+    earth: { label: "土", symbol: "土", emoji: "🪨" },
+    light: { label: "光", symbol: "光", emoji: "✨" },
+    dark: { label: "闇", symbol: "闇", emoji: "🌑" }
   }[element] || null;
+}
+
+function elementEmoji(element) {
+  return elementInfo(element)?.emoji || "";
 }
 
 function elementBadgeHtml(element, showLabel = false) {

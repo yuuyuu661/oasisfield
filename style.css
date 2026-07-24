@@ -842,6 +842,20 @@ button:disabled {
   color: #0f766e;
 }
 
+.enchant-hand-stat {
+  display: flex;
+  min-height: 27px;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 2px solid #17916f;
+  border-radius: 7px;
+  background: #efffd7;
+  color: #075f4b;
+  font-size: clamp(17px, 1.45vw, 24px);
+  line-height: 1;
+}
+
 .element-badge {
   display: inline-flex;
   flex: 0 0 auto;
