@@ -1288,18 +1288,67 @@ function resolvePendingAttack(game) {
   playUsedCardSounds(defenseCards);
   defenseCards.forEach(card => removeCardFromHand(defender, card.uid));
   damagePlayer(game, defender, damage);
-  let reflectedTarget = null;
+  applyDefenseReactions(game, defenseCards, attacker, defender, damage);
+
   if (reflector) {
     const reflectionMode = reflectionModeForCard(reflector);
-    reflectedTarget = reflectionMode === "bounce"
-      ? game[randomLivingPlayerId(game)]
-      : attacker;
-    damagePlayer(game, reflectedTarget, pending.attack * Math.max(1, pending.hitCount || 1));
-    if (pending.attack > 0 && resolvedElement === "dark") reflectedTarget.hp = 0;
-    if (pending.attack <= 0 && pending.card.statusEffect && pending.card.statusEffect !== "none") {
-      applyStatusEffect(game, reflectedTarget, pending.card.statusEffect);
+    const reflectedTargetId = reflectionMode === "bounce"
+      ? randomLivingPlayerId(game)
+      : pending.attackerId;
+    const reflectedTarget = game[reflectedTargetId];
+    const drawCounts = { ...(pending.drawCounts || {}) };
+    if (!pending.drawCounts) {
+      drawCounts[pending.attackerId] = (drawCounts[pending.attackerId] || 0)
+        + 1 + (pending.enhancementCards?.length || 0);
     }
-    game.logs.unshift(`${reflector.name}が攻撃を${reflectedTarget.name}へ${reflectionMode === "bounce" ? "弾きました" : "反射しました"}。`);
+    drawCounts[pending.defenderId] = (drawCounts[pending.defenderId] || 0) + defenseCards.length;
+
+    defender.selectedDefense = [];
+    reflectedTarget.selectedDefense = [];
+    game.attackerId = pending.defenderId;
+    game.defenderId = reflectedTargetId;
+    game.pendingAttack = {
+      ...pending,
+      attackerId: pending.defenderId,
+      defenderId: reflectedTargetId,
+      element: resolvedElement,
+      hit: true,
+      nullified: false,
+      reflectedBy: reflector,
+      effectOwnerId: pending.effectOwnerId || pending.attackerId,
+      drawCounts
+    };
+    game.lastBattle = {
+      attackerId: pending.defenderId,
+      defenderId: reflectedTargetId,
+      attackCard: pending.card,
+      attackCards: [pending.card, ...(pending.enhancementCards || [])],
+      element: resolvedElement,
+      defenseCards: [],
+      attack: pending.attack,
+      defense: 0,
+      hitCount: pending.hitCount,
+      damage: null
+    };
+    game.hitResult = {
+      hit: true,
+      text: `${reflector.name}が${reflectedTarget.name}へ${reflectionMode === "bounce" ? "弾いた" : "反射した"}攻撃です`
+    };
+    game.logs.unshift(`${reflector.name}が攻撃を${reflectedTarget.name}へ${reflectionMode === "bounce" ? "弾きました" : "反射しました"}。再攻撃を開始します。`);
+    game.phase = "defense";
+    game.busy = false;
+    renderNow();
+
+    if (reflectedTarget.isCpu) {
+      game.busy = true;
+      renderNow();
+      setTimeout(() => {
+        cpuChooseDefense(game);
+        renderNow();
+        setTimeout(() => resolvePendingAttack(game), RESOLVE_DELAY);
+      }, CPU_DELAY);
+    }
+    return;
   }
   if (nullifier) game.logs.unshift(`${nullifier.name}が奇跡を完全に止めました。`);
   if (damage > 0 && (pending.card.effect === "instant_defeat" || resolvedElement === "dark")) defender.hp = 0;
@@ -1316,9 +1365,9 @@ function resolvePendingAttack(game) {
   ) {
     applyStatusEffect(game, defender, pending.card.statusEffect);
   }
-  if (damage > 0 && pending.card.effect === "hp_drain") healPlayer(game, attacker, damage);
-  if (pending.card.effect === "self_damage") damagePlayer(game, attacker, damage);
-  applyDefenseReactions(game, defenseCards, attacker, defender, damage);
+  const effectOwner = game[pending.effectOwnerId || pending.attackerId];
+  if (damage > 0 && pending.card.effect === "hp_drain") healPlayer(game, effectOwner, damage);
+  if (pending.card.effect === "self_damage") damagePlayer(game, effectOwner, damage);
 
   game.lastBattle = {
     attackerId: pending.attackerId,
@@ -1352,8 +1401,15 @@ function resolvePendingAttack(game) {
 
   defender.selectedDefense = [];
   game.pendingAttack = null;
-  drawCards(game, attacker, 1 + (pending.enhancementCards?.length || 0));
-  drawCards(game, defender, defenseCards.length);
+  if (pending.drawCounts) {
+    pending.drawCounts[pending.defenderId] = (pending.drawCounts[pending.defenderId] || 0) + defenseCards.length;
+    Object.entries(pending.drawCounts).forEach(([playerId, count]) => {
+      drawCards(game, game[playerId], count);
+    });
+  } else {
+    drawCards(game, attacker, 1 + (pending.enhancementCards?.length || 0));
+    drawCards(game, defender, defenseCards.length);
+  }
   checkWinner(game);
   renderNow();
   setTimeout(() => {
