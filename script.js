@@ -165,6 +165,9 @@ const els = {
   enemyGuardian: document.getElementById("enemyGuardian"),
   handHelp: document.getElementById("handHelp"),
   playerHand: document.getElementById("playerHand"),
+  learnedMagicSection: document.getElementById("learnedMagicSection"),
+  learnedMagicCount: document.getElementById("learnedMagicCount"),
+  learnedMagicList: document.getElementById("learnedMagicList"),
   cardDetail: document.getElementById("cardDetail")
 };
 
@@ -175,6 +178,7 @@ function renderGame() {
   renderArena();
   renderPhase();
   renderHand();
+  renderLearnedMagics();
   renderDetail();
   renderInteraction();
 }
@@ -471,7 +475,7 @@ function renderHand() {
   game.player.hand.forEach(card => {
     const visibleCard = visibleCardForPlayer(card);
     const usableAsAttack = (
-      canChooseTurnCards && (card.type === "weapon" || isAdditionalAttackCard(card))
+      canChooseTurnCards && (card.type === "weapon" || card.effect === "attack_defense" || isAdditionalAttackCard(card))
     ) || (
       canChooseTurnCards && (card.type === "item" || card.type === "magic")
     );
@@ -512,6 +516,33 @@ function renderHand() {
   });
 }
 
+function renderLearnedMagics() {
+  const magics = game.player.learnedMagics || [];
+  els.learnedMagicSection?.classList.toggle("hidden", magics.length === 0);
+  if (els.learnedMagicCount) els.learnedMagicCount.textContent = `${magics.length} / 6`;
+  if (!els.learnedMagicList) return;
+  els.learnedMagicList.innerHTML = "";
+  const usable = game.phase === "attack" && game.turn === "player" && !game.winner && !game.busy;
+  magics.forEach(card => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `learned-magic ${usable && game.player.mp >= (game.player.freeMagicUses ? 0 : card.mpCost || 0) ? "" : "disabled"}`;
+    button.disabled = !usable || game.player.mp < (game.player.freeMagicUses ? 0 : card.mpCost || 0);
+    button.innerHTML = `${cardImageHtml(card)}<span>${card.name}</span><b>MP ${game.player.freeMagicUses ? 0 : card.mpCost || 0}</b>`;
+    button.addEventListener("mouseenter", () => {
+      game.focusedCard = card;
+      renderDetail();
+    });
+    button.addEventListener("click", () => {
+      game.focusedCard = card;
+      const targetId = card.target === "self" ? game.attackerId : opponentId(game.attackerId);
+      useUtilityAndEndTurn(game, card.uid, targetId);
+      renderGame();
+    });
+    els.learnedMagicList.appendChild(button);
+  });
+}
+
 function renderDetail() {
   const actualCard = game.focusedCard || game.selectedAttackCard;
 
@@ -542,22 +573,7 @@ function renderDetail() {
 }
 
 function visibleCardForPlayer(card) {
-  if (!card || !game.player.statuses.includes("dream")) return card;
-  if (!game.player.hand.some(handCard => handCard.uid === card.uid)) return card;
-
-  const alternatives = getCardMaster().filter(master => master.id !== card.id);
-  if (alternatives.length === 0) return card;
-  game.dreamMasks ||= {};
-  if (!(card.uid in game.dreamMasks)) {
-    game.dreamMasks[card.uid] = Math.random() < 0.5
-      ? alternatives[Math.floor(Math.random() * alternatives.length)].id
-      : null;
-  }
-  const disguiseId = game.dreamMasks[card.uid];
-  if (!disguiseId) return card;
-  const disguise = alternatives.find(master => master.id === disguiseId);
-  if (!disguise) return card;
-  return { ...disguise, uid: card.uid, name: `${disguise.name}？` };
+  return card;
 }
 
 function renderInteraction() {

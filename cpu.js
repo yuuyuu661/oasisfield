@@ -17,10 +17,32 @@ function cpuTakeAttackAction(game) {
   }
 
   const weapons = cpu.hand
-    .filter(card => card.type === "weapon" && !isAdditionalAttackCard(card))
+    .filter(card => (card.type === "weapon" && !isAdditionalAttackCard(card)) || card.effect === "attack_defense")
     .sort((a, b) => (b.attack || 0) - (a.attack || 0));
 
   if (weapons.length === 0) {
+    const learned = [...(cpu.learnedMagics || [])]
+      .filter(card => cpu.mp >= (cpu.freeMagicUses ? 0 : Number(card.mpCost || 0)))
+      .sort((a, b) => Number(b.attack || b.effectPower || b.heal || 0) - Number(a.attack || a.effectPower || a.heal || 0))[0];
+    if (learned) {
+      game.busy = false;
+      const targetId = learned.target === "self" ? "enemy" : "player";
+      useUtilityAndEndTurn(game, learned.uid, targetId);
+      window.renderGame();
+      return;
+    }
+    const additional = cpu.hand
+      .filter(card => isAdditionalAttackCard(card))
+      .sort((a, b) => Number(b.attack || 0) - Number(a.attack || 0))[0];
+    if (additional) {
+      game.busy = false;
+      game.selectedAttackUid = additional.uid;
+      game.selectedAttackCard = additional;
+      game.phase = "target";
+      startAttack(game, additional.uid, "player");
+      window.renderGame();
+      return;
+    }
     const utility = cpu.hand.find(card => card.type === "item" || card.type === "magic");
     if (utility) {
       game.busy = false;

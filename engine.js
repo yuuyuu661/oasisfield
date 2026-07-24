@@ -33,12 +33,75 @@ function createPlayer(name, isCpu = false) {
     attackMultiplier: 1,
     forceNextHit: false,
     guardian: null,
+    learnedMagics: [],
+    magicBarrier: null,
     freeMagicUses: 0,
-    revivePower: 0,
     statuses: [],
     hand: [],
     selectedDefense: []
   };
+}
+
+function learnMagic(game, player, card) {
+  if (!card || card.type !== "magic") return;
+  const knownIndex = player.learnedMagics.findIndex(magic => magic.id === card.id);
+  if (knownIndex !== -1) {
+    player.learnedMagics.splice(knownIndex, 1);
+  }
+  player.learnedMagics.push({ ...card, uid: `learned-${card.id}` });
+  if (player.learnedMagics.length > 6) {
+    const forgotten = player.learnedMagics.shift();
+    game.logs.unshift(`${player.name}は「${forgotten.name}」を忘れました。`);
+  }
+  game.logs.unshift(`${player.name}は「${card.name}」を奇跡として習得しました。`);
+}
+
+function dreamTransformCard(game, player, card, predicate = () => true) {
+  if (!card || !player.statuses.includes("dream") || Math.random() >= 0.5) return card;
+  const candidates = getCardMaster().filter(candidate => candidate.id !== card.id && predicate(candidate));
+  if (candidates.length === 0) return card;
+  const transformed = { ...candidates[Math.floor(Math.random() * candidates.length)], uid: card.uid };
+  game.hitResult = { hit: false, text: `夢により「${card.name}」が「${transformed.name}」へ変化！` };
+  game.logs.unshift(`${player.name}が出した「${card.name}」は、夢により「${transformed.name}」へ変わりました。`);
+  return transformed;
+}
+
+function hasPassiveCard(player, sourceName) {
+  return player.hand.some(card => (card.sourceName || card.name) === sourceName);
+}
+
+function damagePlayer(game, player, amount, { allowGuardianDeparture = true } = {}) {
+  const damage = Math.max(0, Number(amount || 0));
+  if (damage <= 0) return 0;
+  player.hp = Math.max(0, player.hp - damage);
+  if (allowGuardianDeparture && player.guardian && Math.random() < 0.1) {
+    const guardianName = player.guardian.name;
+    player.guardian = null;
+    game.logs.unshift(`${player.name}の${guardianName}は、ダメージに驚いて去りました。`);
+  }
+  if (player.hp <= 0 && hasPassiveCard(player, "太陽のお守り")) {
+    const charm = player.hand.find(card => (card.sourceName || card.name) === "太陽のお守り");
+    removeCardFromHand(player, charm.uid);
+    player.hp = 10;
+    game.logs.unshift(`${player.name}は太陽のお守りによりHP10で復活しました。`);
+  }
+  return damage;
+}
+
+function refillEntireHand(game, player) {
+  const count = player.hand.length;
+  player.hand = [];
+  drawCards(game, player, count);
+}
+
+function discardCard(game, player, card) {
+  if (!card) return false;
+  if ((card.sourceName || card.name) === "あぶないウス") {
+    damagePlayer(game, player, 1);
+    game.logs.unshift(`${player.name}のあぶないウスは手札へ戻り、${player.name}は1ダメージを受けました。`);
+    return false;
+  }
+  return Boolean(removeCardFromHand(player, card.uid));
 }
 
 function createGame() {
@@ -128,7 +191,11 @@ function selectAttackCard(game, uid) {
 
   if (isAdditionalAttackCard(card)) {
     if (!game.selectedAttackUid) {
-      game.logs.unshift("先に武器カードを選択してください。");
+      game.selectedUtilityUid = null;
+      game.selectedAttackUid = uid;
+      game.selectedAttackCard = card;
+      game.phase = "target";
+      game.logs.unshift(`追加攻撃「${card.name}」を単独で使用します。攻撃対象を選んでください。`);
       return;
     }
     const selected = game.selectedAttackEnhancementUids.includes(uid);
@@ -141,7 +208,7 @@ function selectAttackCard(game, uid) {
     return;
   }
 
-  if (card.type === "weapon") {
+  if (card.type === "weapon" || card.effect === "attack_defense") {
     game.selectedUtilityUid = null;
     game.selectedAttackUid = uid;
     game.selectedAttackCard = card;
@@ -266,6 +333,11 @@ function selectedRainbowCurtain(game) {
 function canUseDefenseCard(game, card) {
   if (!isDefenseCard(card) || !game.pendingAttack?.hit) return false;
   const attackElement = game.pendingAttack.element || game.pendingAttack.card?.element || "none";
+  if (game.pendingAttack.isMagic) return ["reflect_magic", "nullify_magic"].includes(card.effect);
+  if (card.effect === "reflect_normal") {
+    return (card.sourceName || card.name) === "スーパーミラー" || attackElement === "none";
+  }
+  if (["reflect_magic", "nullify_magic"].includes(card.effect)) return false;
   if (card.effect === "element_change") return attackElement !== "none";
   if (defenseElementCanBlock(attackElement, card.element)) return true;
   if (getDefender(game).statuses.includes("flash")) return false;
@@ -276,14 +348,32 @@ function canUseDefenseCard(game, card) {
 function startAttack(game, uid, defenderId) {
   if (game.busy || game.winner || game.phase !== "target") return false;
   const attacker = getActor(game);
-  const used = removeCardFromHand(attacker, uid);
-  if (!used || used.type !== "weapon" || isAdditionalAttackCard(used)) return false;
+  const playedCard = removeCardFromHand(attacker, uid);
+  if (!playedCard || (playedCard.type !== "weapon" && playedCard.effect !== "attack_defense")) return false;
+  const used = dreamTransformCard(
+    game,
+    attacker,
+    playedCard,
+    card => card.type === "weapon" || card.effect === "attack_defense"
+  );
   const enhancementCards = game.selectedAttackEnhancementUids
     .map(selectedUid => removeCardFromHand(attacker, selectedUid))
-    .filter(card => isAdditionalAttackCard(card));
+    .filter(card => isAdditionalAttackCard(card))
+    .map(card => dreamTransformCard(game, attacker, card, candidate => isAdditionalAttackCard(candidate)));
   playUsedCardSounds([used, ...enhancementCards]);
 
-  if (used.effect === "random_target") defenderId = Math.random() < 0.5 ? "player" : "enemy";
+  if ((used.sourceName || used.name) === "あぶないキネ") {
+    const mortarOwnerId = ["player", "enemy"].find(id => hasPassiveCard(game[id], "あぶないウス"));
+    if (mortarOwnerId) {
+      defenderId = mortarOwnerId;
+      damagePlayer(game, game[mortarOwnerId], 99);
+      game.logs.unshift(`あぶないキネが、あぶないウスを持つ${game[mortarOwnerId].name}に99ダメージを与えました。`);
+    } else {
+      defenderId = Math.random() < 0.5 ? "player" : "enemy";
+    }
+  } else if (used.effect === "random_target") {
+    defenderId = Math.random() < 0.5 ? "player" : "enemy";
+  }
   const defender = game[defenderId];
   const additionalAttack = enhancementCards.reduce((sum, card) => sum + Number(card.attack || 0), 0);
   const attackElement = combineAttackElements([used, ...enhancementCards]);
@@ -296,6 +386,8 @@ function startAttack(game, uid, defenderId) {
   attacker.attackBoost = 0;
 
   const hit = defenderId === game.attackerId || attacker.forceNextHit ? true : rollAttackHit(used, defender);
+  const wallBlocked = defender.magicBarrier === "wall" && attackElement === "none";
+  if (wallBlocked) defender.magicBarrier = null;
   game.defenderId = defenderId;
   game.pendingAttack = {
     card: used,
@@ -303,7 +395,9 @@ function startAttack(game, uid, defenderId) {
     element: attackElement,
     attack: attackValue,
     hitCount,
-    hit,
+    hit: hit && !wallBlocked,
+    nullified: wallBlocked,
+    allAttack: Boolean(attacker.forceNextHit || used.isAllAttack || used.target === "all_enemies"),
     attackerId: game.attackerId,
     defenderId
   };
@@ -316,11 +410,11 @@ function startAttack(game, uid, defenderId) {
     defenseCards: [],
     attack: attackValue,
     defense: 0,
-    damage: hit ? "🎯 命中" : "💨 外れ"
+    damage: wallBlocked ? "🧱 壁で無効" : hit ? "🎯 命中" : "💨 外れ"
   };
   game.hitResult = {
-    hit,
-    text: hit ? "命中！ 防御を選択してください" : "攻撃は外れました"
+    hit: hit && !wallBlocked,
+    text: wallBlocked ? "＜壁＞が無属性攻撃を止めました" : hit ? "命中！ 防御を選択してください" : "攻撃は外れました"
   };
   game.selectedAttackUid = null;
   game.selectedAttackCard = null;
@@ -331,7 +425,7 @@ function startAttack(game, uid, defenderId) {
   const attackNames = [used, ...enhancementCards].map(card => `「${card.name}」`).join("＋");
   game.logs.unshift(`${attacker.name}の${attackNames}は${hit ? "命中しました" : "外れました"}。`);
 
-  if (!hit) {
+  if (!hit || wallBlocked) {
     game.phase = "resolving";
     game.busy = true;
     renderNow();
@@ -378,7 +472,12 @@ function runForcedRandomActions(game, actionCount = 3) {
     for (const actor of players) {
       if (actor.hp <= 0 || actor.hand.length === 0) continue;
       const card = actor.hand[Math.floor(Math.random() * actor.hand.length)];
-      removeCardFromHand(actor, card.uid);
+      const isMortar = (card.sourceName || card.name) === "あぶないウス";
+      if (isMortar) {
+        damagePlayer(game, actor, 1);
+      } else {
+        removeCardFromHand(actor, card.uid);
+      }
       const opponent = actor === game.player ? game.enemy : game.player;
       const target = Math.random() < 0.5 ? actor : opponent;
       const amount = Number(card.effectPower || card.heal || card.attack || 0);
@@ -387,14 +486,15 @@ function runForcedRandomActions(game, actionCount = 3) {
       if (card.type === "weapon" && !isAdditionalAttackCard(card)) {
         const hit = rollAttackHit(card, target);
         const damage = hit ? Math.max(0, Number(card.attack || 0)) * Math.max(1, Number(card.hitCount || 1)) : 0;
-        target.hp = Math.max(0, target.hp - damage);
+        damagePlayer(game, target, damage);
         actionText = hit ? `${target.name}に${damage}ダメージ` : "外れ";
       } else if (card.type === "magic" && actor.mp >= Number(card.mpCost || 0)) {
         actor.mp -= Number(card.mpCost || 0);
+        learnMagic(game, actor, card);
         if (["magic_attack", "magic_all_attack", "hp_drain"].includes(card.effect)) {
           const hit = rollAttackHit(card, target);
           const damage = hit ? Math.max(0, amount) : 0;
-          target.hp = Math.max(0, target.hp - damage);
+          damagePlayer(game, target, damage);
           if (card.effect === "hp_drain") actor.hp = Math.min(actor.hpCap || 99, actor.hp + damage);
           actionText = hit ? `${target.name}に${damage}ダメージ` : "外れ";
         } else if (card.effect === "inflict_status") {
@@ -412,12 +512,12 @@ function runForcedRandomActions(game, actionCount = 3) {
           target.mp = Math.min(target.maxMp, target.mp + amount);
           actionText = `${target.name}のMPを${amount}回復`;
         } else if (card.effect === "self_damage") {
-          actor.hp = Math.max(0, actor.hp - amount);
+          damagePlayer(game, actor, amount);
           actionText = `${actor.name}に${amount}ダメージ`;
         }
       }
 
-      drawCard(game, actor);
+      if (!isMortar) drawCard(game, actor);
       game.logs.unshift(`キノコ大発生: ${actor.name}が「${card.name}」を勝手に使い、${actionText}。`);
     }
   }
@@ -459,16 +559,24 @@ function triggerSupernaturalEvent(game, actor) {
       name: "巨大なタライ",
       run() {
         const target = players[Math.floor(Math.random() * players.length)];
-        target.hp = Math.max(0, target.hp - 50);
+        resolveGuardianAttack(game, actor, target, {
+          name: "超常現象", element: "light", image: ""
+        }, {
+          name: "巨大なタライ", attack: 50, element: "light", chance: 100
+        });
         return `${target.name}に光属性50ダメージ`;
       }
     },
     {
       name: "ブラックホール",
       run() {
-        const hit = Math.random() < 0.75;
-        if (hit) opponent.hp = Math.max(0, opponent.hp - 30);
-        return hit ? `${opponent.name}に闇属性30ダメージ` : "闇属性攻撃は外れた";
+        const before = opponent.hp;
+        resolveGuardianAttack(game, actor, opponent, {
+          name: "超常現象", element: "dark", image: ""
+        }, {
+          name: "ブラックホール", attack: 30, element: "dark", chance: 75
+        });
+        return opponent.hp < before ? `${opponent.name}に闇属性攻撃` : "闇属性攻撃は外れたか防がれた";
       }
     },
     {
@@ -522,7 +630,8 @@ function triggerSupernaturalEvent(game, actor) {
 function useUtilityAndEndTurn(game, uid, targetId) {
   if (game.busy || game.winner || !["attack", "utility_target"].includes(game.phase)) return false;
   const actor = getActor(game);
-  const original = actor.hand.find(card => card.uid === uid);
+  const learnedMagic = actor.learnedMagics.find(card => card.uid === uid);
+  const original = actor.hand.find(card => card.uid === uid) || learnedMagic;
   if (!original) return false;
 
   if (original.type === "item" && ["sell", "buy", "exchange"].includes(original.effect)) {
@@ -532,27 +641,79 @@ function useUtilityAndEndTurn(game, uid, targetId) {
   }
 
   if (original.type === "magic") {
-    const usesFreeMagic = actor.freeMagicUses > 0;
+    const freeEquipment = actor.hand.find(card =>
+      card.uid !== uid && card.effect === "mp_free_magic" && card.type !== "item"
+    );
+    const usesFreeMagic = actor.freeMagicUses > 0 || Boolean(freeEquipment);
     const cost = usesFreeMagic ? 0 : (original.mpCost || 0);
     if (actor.mp < cost) {
       game.logs.unshift(`MPが${cost}必要です。`);
       return false;
     }
     actor.mp -= cost;
-    if (usesFreeMagic) actor.freeMagicUses -= 1;
+    if (actor.freeMagicUses > 0) {
+      actor.freeMagicUses -= 1;
+    } else if (freeEquipment) {
+      removeCardFromHand(actor, freeEquipment.uid);
+      drawCard(game, actor);
+      game.logs.unshift(`${actor.name}は${freeEquipment.name}を重ね、MPを消費せず奇跡を起こしました。`);
+    }
   }
 
-  const used = removeCardFromHand(actor, uid);
+  const played = learnedMagic ? { ...learnedMagic } : removeCardFromHand(actor, uid);
+  const used = learnedMagic
+    ? played
+    : dreamTransformCard(
+      game,
+      actor,
+      played,
+      candidate => candidate.type === played.type && !["sell", "buy", "exchange"].includes(candidate.effect)
+    );
   if (!used) return false;
+  if (used.type === "magic" && !learnedMagic) learnMagic(game, actor, used);
   playUsedCardSounds([used]);
-  const resolvedTargetId = targetId || (used.target === "self" ? game.attackerId : opponentId(game.attackerId));
-  const target = game[resolvedTargetId];
+  let resolvedTargetId = targetId || (used.target === "self" ? game.attackerId : opponentId(game.attackerId));
+  let target = game[resolvedTargetId];
   const amount = Number(used.effectPower || used.heal || used.attack || 0);
   let resultText = cardEffectLabel(used.type, used.effect);
   let hit = true;
   let dealtDamage = null;
+  let magicNegated = false;
 
-  if (used.effect === "heal" || used.effect === "heal_hp") {
+  if (used.type === "magic" && target !== actor) {
+    let ward = null;
+    let wardSource = null;
+    if (["reflect", "nullify"].includes(target.magicBarrier)) {
+      ward = target.magicBarrier;
+      target.magicBarrier = null;
+    } else {
+      wardSource = target.hand.find(card =>
+        card.effect === "reflect_magic"
+        || (card.effect === "nullify_magic" && (card.sourceName || card.name) !== "＜壁＞")
+        || ["reflect_magic", "nullify_magic"].includes(card.secondaryEffect)
+      );
+      if (wardSource) {
+        ward = (wardSource.effect === "reflect_magic" || wardSource.secondaryEffect === "reflect_magic")
+          ? "reflect"
+          : "nullify";
+        removeCardFromHand(target, wardSource.uid);
+        drawCard(game, target);
+      }
+    }
+    if (ward === "reflect") {
+      game.logs.unshift(`${target.name}は${wardSource?.name || "乱気流"}で「${used.name}」を反射しました。`);
+      resolvedTargetId = game.attackerId;
+      target = actor;
+    } else if (ward === "nullify") {
+      magicNegated = true;
+      hit = false;
+      resultText = `${target.name}が${wardSource?.name || "結界"}で奇跡を無効化`;
+    }
+  }
+
+  if (magicNegated) {
+    dealtDamage = 0;
+  } else if (used.effect === "heal" || used.effect === "heal_hp") {
     healPlayer(game, target, amount);
     resultText = `${target.name}のHPを${amount}回復`;
   } else if (used.effect === "heal_mp") {
@@ -570,7 +731,7 @@ function useUtilityAndEndTurn(game, uid, targetId) {
     resultText = `${target.name}の次の単体武器の攻撃力を2倍`;
   } else if (used.effect === "sure_all_attack") {
     target.forceNextHit = true;
-    resultText = `${target.name}の次の単体武器を必中化`;
+    resultText = `${target.name}の次の単体武器を必中の全体攻撃化`;
   } else if (used.effect === "draw") {
     drawCards(game, target, Math.max(1, amount));
     resultText = `${target.name}が${Math.max(1, amount)}枚授かる`;
@@ -584,7 +745,7 @@ function useUtilityAndEndTurn(game, uid, targetId) {
     hit = rollAttackHit(used, target);
     if (hit && (used.attack || 0) > 0) {
       dealtDamage = Number(used.attack || 0);
-      target.hp = Math.max(0, target.hp - dealtDamage);
+      damagePlayer(game, target, dealtDamage);
     }
     if (hit) applyStatusEffect(game, target, used.statusEffect);
     resultText = hit ? `${target.name}に${STATUS_EFFECTS[used.statusEffect] || "災い"}を付与` : "魔法は外れました";
@@ -592,7 +753,7 @@ function useUtilityAndEndTurn(game, uid, targetId) {
     hit = rollAttackHit(used, target);
     const damage = hit ? Math.max(0, amount) : 0;
     if (hit) dealtDamage = damage;
-    target.hp = Math.max(0, target.hp - damage);
+    damagePlayer(game, target, damage);
     if (used.effect === "hp_drain") healPlayer(game, actor, damage);
     resultText = hit ? `${target.name}に${damage}ダメージ（魔法は防御不可）` : "魔法は外れました";
   } else if (used.effect === "random_heal_damage") {
@@ -600,7 +761,7 @@ function useUtilityAndEndTurn(game, uid, targetId) {
       healPlayer(game, target, amount);
       resultText = `${target.name}のHPを${amount}回復`;
     } else {
-      target.hp = Math.max(0, target.hp - amount);
+      damagePlayer(game, target, amount);
       dealtDamage = amount;
       resultText = `${target.name}に${amount}ダメージ`;
     }
@@ -608,21 +769,32 @@ function useUtilityAndEndTurn(game, uid, targetId) {
     const guardian = summonRandomGuardian(game, target);
     resultText = guardian ? `${target.name}に${guardian.name}を召喚` : "守護神を召喚できない";
   } else if (used.effect === "self_damage") {
-    actor.hp = Math.max(0, actor.hp - amount);
+    damagePlayer(game, actor, amount);
     dealtDamage = amount;
     resultText = `${actor.name}に${amount}ダメージ`;
   } else if (used.effect === "discard") {
-    const count = Math.min(target.hand.length, Math.max(1, amount));
-    for (let i = 0; i < count; i++) target.hand.splice(Math.floor(Math.random() * target.hand.length), 1);
-    resultText = `${target.name}のカードを${count}枚消去`;
+    const requested = Math.min(target.hand.length, Math.max(1, amount));
+    let discarded = 0;
+    for (let i = 0; i < requested && target.hand.length; i++) {
+      const card = target.hand[Math.floor(Math.random() * target.hand.length)];
+      if (discardCard(game, target, card)) discarded += 1;
+    }
+    if ((used.sourceName || used.name) === "イタズラマン") {
+      const remaining = Math.max(0, requested - discarded);
+      for (let i = 0; i < remaining && actor.learnedMagics.length; i++) {
+        actor.learnedMagics.splice(Math.floor(Math.random() * actor.learnedMagics.length), 1);
+        discarded += 1;
+      }
+    }
+    resultText = `${target.name}の神器・奇跡を${discarded}個消去`;
   } else if (used.effect === "forget_magic") {
-    const magics = target.hand.filter(card => card.type === "magic");
+    const magics = [...target.learnedMagics];
     const count = Math.min(magics.length, Math.max(1, amount));
     for (let i = 0; i < count; i++) {
       const selected = magics.splice(Math.floor(Math.random() * magics.length), 1)[0];
-      if (selected) removeCardFromHand(target, selected.uid);
+      if (selected) target.learnedMagics = target.learnedMagics.filter(magic => magic.id !== selected.id);
     }
-    resultText = `${target.name}の魔法を${count}枚忘れさせた`;
+    resultText = `${target.name}の奇跡を${count}個忘れさせた`;
   } else if (used.effect === "random_event") {
     if (used.target === "all_players") {
       resultText = triggerSupernaturalEvent(game, actor);
@@ -635,9 +807,20 @@ function useUtilityAndEndTurn(game, uid, targetId) {
   } else if (used.effect === "mp_free_magic") {
     target.freeMagicUses += 1;
     resultText = `${target.name}の次の魔法のMP消費が0`;
+  } else if (used.effect === "reflect_magic") {
+    target.magicBarrier = "reflect";
+    resultText = `${target.name}が次に受ける奇跡を反射`;
+  } else if (used.effect === "nullify_magic") {
+    target.magicBarrier = (used.sourceName || used.name) === "＜壁＞" ? "wall" : "nullify";
+    resultText = target.magicBarrier === "wall"
+      ? `${target.name}が次に受ける無属性武器を無効化`
+      : `${target.name}が次に受ける奇跡を無効化`;
   } else if (used.effect === "revive") {
-    target.revivePower = Math.max(target.revivePower, amount || 10);
-    resultText = `${target.name}がHP0時に${target.revivePower}で復活`;
+    resultText = "太陽のお守りは手札にある間、HP0時に自動発動";
+  } else if (used.effect === "custom" && (used.sourceName || used.name) === "あぶないウス") {
+    actor.hand.push(played);
+    damagePlayer(game, actor, 1);
+    resultText = "あぶないウスは捨てられず手札へ戻り、使用者に1ダメージ";
   }
 
   if (used.statusEffect && used.statusEffect !== "none" && !["inflict_status", "cure_status"].includes(used.effect)) {
@@ -898,10 +1081,11 @@ function applyDefenseReactions(game, defenseCards, attacker, defender, damage) {
     if (card.effect === "inflict_status") {
       if (card.target === "self" || damage > 0) {
         applyStatusEffect(game, card.target === "self" ? defender : attacker, card.statusEffect);
+        if ((card.sourceName || card.name) === "夢見る帽子") refillEntireHand(game, defender);
       }
     } else if (damage > 0 && card.effect === "counter_attack") {
       const counter = card.effectPower > 0 ? damage * card.effectPower : damage;
-      attacker.hp = Math.max(0, attacker.hp - counter);
+      damagePlayer(game, attacker, counter);
       game.logs.unshift(`${card.name}が${counter}ダメージで反撃しました。`);
     } else if (damage > 0 && card.effect === "mp_gain_on_damage") {
       defender.mp = Math.min(defender.maxMp, defender.mp + damage * (card.effectPower || 2));
@@ -921,27 +1105,41 @@ function resolvePendingAttack(game) {
   const pending = game.pendingAttack;
   const attacker = game[pending.attackerId];
   const defender = game[pending.defenderId];
-  const selectedDefenseCards = pending.hit ? getSelectedDefenseCards(defender) : [];
+  const selectedDefenseCards = pending.hit
+    ? getSelectedDefenseCards(defender).map(card =>
+      dreamTransformCard(game, defender, card, candidate => isDefenseCard(candidate))
+    )
+    : [];
   const rainbowCurtain = selectedDefenseCards.some(card => card.effect === "element_change");
   const resolvedElement = rainbowCurtain && (pending.element || "none") !== "none"
     ? "none"
     : (pending.element || pending.card.element || "none");
   const defenseCards = selectedDefenseCards.filter(card =>
-    card.effect === "element_change" || defenseElementCanBlock(resolvedElement, card.element)
+    card.effect === "element_change"
+    || card.effect === "reflect_normal"
+    || defenseElementCanBlock(resolvedElement, card.element)
   );
+  const reflector = defenseCards.find(card => card.effect === "reflect_normal");
   const defenseTotal = defenseCards.reduce((sum, card) => sum + (card.defense || 0), 0);
-  const perHitDamage = pending.hit ? Math.max(0, pending.attack - defenseTotal) : 0;
+  const perHitDamage = pending.hit && !reflector ? Math.max(0, pending.attack - defenseTotal) : 0;
   const damage = perHitDamage * Math.max(1, pending.hitCount || 1);
 
   playUsedCardSounds(defenseCards);
   defenseCards.forEach(card => removeCardFromHand(defender, card.uid));
-  defender.hp = Math.max(0, defender.hp - damage);
+  damagePlayer(game, defender, damage);
+  if (reflector) {
+    const reflectedTarget = (reflector.sourceName || reflector.name) === "乱弾武剣"
+      ? (Math.random() < 0.5 ? game.player : game.enemy)
+      : attacker;
+    damagePlayer(game, reflectedTarget, pending.attack * Math.max(1, pending.hitCount || 1));
+    game.logs.unshift(`${reflector.name}が攻撃を${reflectedTarget.name}へ反射しました。`);
+  }
   if (damage > 0 && (pending.card.effect === "instant_defeat" || resolvedElement === "dark")) defender.hp = 0;
   if (damage > 0 && pending.card.statusEffect && pending.card.statusEffect !== "none") {
     applyStatusEffect(game, defender, pending.card.statusEffect);
   }
   if (damage > 0 && pending.card.effect === "hp_drain") healPlayer(game, attacker, damage);
-  if (pending.card.effect === "self_damage") attacker.hp = Math.max(0, attacker.hp - damage);
+  if (pending.card.effect === "self_damage") damagePlayer(game, attacker, damage);
   applyDefenseReactions(game, defenseCards, attacker, defender, damage);
 
   game.lastBattle = {
@@ -1054,7 +1252,7 @@ function processEndOfTurnStatuses(game, player) {
   const disease = DISEASE_CHAIN.find(status => player.statuses.includes(status));
   const hpChange = { cold: -1, fever: -2, hell: -5, heaven: 5 }[disease] || 0;
   if (hpChange < 0) {
-    player.hp = Math.max(0, player.hp + hpChange);
+    damagePlayer(game, player, -hpChange);
     game.logs.unshift(`${STATUS_EFFECTS[disease]}により${player.name}のHPが${-hpChange}減りました。`);
   } else if (hpChange > 0) {
     healPlayer(game, player, hpChange);
@@ -1073,11 +1271,25 @@ function processEndOfTurnStatuses(game, player) {
 }
 
 function checkWinner(game) {
-  [game.player, game.enemy].forEach(player => {
-    if (player.hp <= 0 && player.revivePower > 0) {
-      player.hp = player.revivePower;
-      player.revivePower = 0;
-      game.logs.unshift(`${player.name}は太陽の加護で復活しました。`);
+  [game.player, game.enemy].forEach((player, index) => {
+    if (player.hp <= 0 && hasPassiveCard(player, "太陽のお守り")) {
+      const charm = player.hand.find(card => (card.sourceName || card.name) === "太陽のお守り");
+      removeCardFromHand(player, charm.uid);
+      player.hp = 10;
+      game.logs.unshift(`${player.name}は太陽のお守りで復活しました。`);
+    }
+    if (player.hp <= 0) {
+      const bow = player.hand.find(card => (card.sourceName || card.name) === "昇天弓");
+      if (bow) {
+        removeCardFromHand(player, bow.uid);
+        const opponent = index === 0 ? game.enemy : game.player;
+        if (Math.random() < 0.75) {
+          damagePlayer(game, opponent, 30);
+          game.logs.unshift(`${player.name}の昇天弓が自動発動し、${opponent.name}に30ダメージを与えました。`);
+        } else {
+          game.logs.unshift(`${player.name}の昇天弓は外れました。`);
+        }
+      }
     }
   });
   if (game.player.hp <= 0 && game.enemy.hp <= 0) {

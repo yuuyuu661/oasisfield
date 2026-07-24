@@ -79,6 +79,7 @@ function catalogCard(sourceName, type, values = {}) {
     defense,
     heal,
     effect: values.effect || (type === "weapon" ? "attack" : type === "armor" ? "defense" : "custom"),
+    secondaryEffect: values.secondaryEffect || "none",
     effectPower: values.effectPower ?? (heal || attack),
     effectChance: values.effectChance ?? 100,
     hitCount: values.hitCount || 1,
@@ -167,7 +168,14 @@ const OASIS_ADDITIONAL_WEAPONS = [
   ["葉っぱ手裏剣", 2, "wood"], ["熟成ゴムの弓", 3, "wood"], ["旧石器ジャベリン", 5, "earth"],
   ["新石器トマホーク", 7, "earth"], ["輝きのカケラ", 1, "light"], ["冥矢", 5, "dark"]
 ].map(([name, attack, element = "none"]) => weapon(name, attack, {
-  element, effect: "add_attack", catalogGroup: "additional_weapon"
+  element,
+  effect: "add_attack",
+  secondaryEffect: name === "スカイハープーン"
+    ? "reflect_magic"
+    : name === "エンゼルの弓"
+      ? "nullify_magic"
+      : "none",
+  catalogGroup: "additional_weapon"
 }));
 
 const OASIS_ALL_WEAPONS = [
@@ -454,6 +462,10 @@ function catalogDescription(card) {
   }
   if (card.type === "armor") {
     const attackText = card.attack ? `、追加攻撃+${card.attack}` : "";
+    if (card.effect === "reflect_magic") return `防御${card.defense}。奇跡を攻撃者へはね返す。`;
+    if (card.effect === "nullify_magic") return `防御${card.defense}。奇跡を完全に止める。`;
+    if (card.effect === "mp_free_magic") return `防御${card.defense}。このカードと同時に使う奇跡のMP消費を0にする。`;
+    if (card.effect === "attack_defense") return `攻撃${card.attack}または防御${card.defense}として使用できる。`;
     return `防御${card.defense}${attackText}。`;
   }
   if (card.type === "magic") {

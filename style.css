@@ -720,6 +720,61 @@ button:disabled {
   padding: 8px 2px 4px;
 }
 
+.learned-magic-section {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 2px solid rgba(0,130,96,.2);
+}
+
+.learned-magic-title {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 1000;
+}
+
+.learned-magic-list {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 7px 1px 2px;
+}
+
+.learned-magic {
+  flex: 0 0 112px;
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  grid-template-rows: 1fr auto;
+  gap: 2px 5px;
+  align-items: center;
+  min-height: 54px;
+  padding: 5px;
+  border: 2px solid #8b5cf6;
+  border-radius: 9px;
+  background: #f4edff;
+  color: #40236b;
+  text-align: left;
+}
+
+.learned-magic img,
+.learned-magic .fallback-icon {
+  grid-row: 1 / 3;
+  width: 36px;
+  height: 40px;
+  object-fit: contain;
+  font-size: 24px;
+}
+
+.learned-magic span {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.learned-magic b { font-size: 11px; }
+.learned-magic.disabled { opacity: .45; }
+
 .hand-card {
   flex: 0 0 132px;
   height: 205px;
