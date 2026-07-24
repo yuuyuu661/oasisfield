@@ -1093,6 +1093,31 @@ function finishTradeUse(game, actor, tradeCardUid, message) {
   if (!game.winner) passTurn(game);
 }
 
+function paySalePrice(buyer, price) {
+  const amount = Math.max(0, Number(price) || 0);
+  let remaining = amount;
+  const gold = Math.min(Math.max(0, Number(buyer.gold) || 0), remaining);
+  buyer.gold -= gold;
+  remaining -= gold;
+
+  const mp = Math.min(Math.max(0, Number(buyer.mp) || 0), remaining);
+  buyer.mp -= mp;
+  remaining -= mp;
+
+  const hp = remaining;
+  buyer.hp = Math.max(0, (Number(buyer.hp) || 0) - hp);
+
+  return { gold, mp, hp };
+}
+
+function salePaymentText(payment) {
+  return [
+    payment.gold ? `￥${payment.gold}` : "",
+    payment.mp ? `MP${payment.mp}` : "",
+    payment.hp ? `HP${payment.hp}` : ""
+  ].filter(Boolean).join("＋") || "￥0";
+}
+
 function completeSale(game, buyerId) {
   if (game.phase !== "sell_target" || !game.pendingTrade?.saleCardUid) return false;
   const seller = getActor(game);
@@ -1101,17 +1126,12 @@ function completeSale(game, buyerId) {
   const card = seller.hand.find(candidate => candidate.uid === game.pendingTrade.saleCardUid);
   if (!card) return false;
   const price = Math.max(0, Number(card.price || 0));
-  let message;
-  if (buyer.gold < price) {
-    message = `${buyer.name}は￥${price}を持っていないため「${card.name}」を買えませんでした。`;
-  } else {
-    buyer.gold -= price;
-    seller.gold = Math.min(99, seller.gold + price);
-    removeCardFromHand(seller, card.uid);
-    buyer.hand.push(card);
-    sortHand(buyer);
-    message = `${seller.name}は${buyer.name}へ「${card.name}」を￥${price}で売りました。`;
-  }
+  const payment = paySalePrice(buyer, price);
+  seller.gold = Math.min(99, seller.gold + price);
+  removeCardFromHand(seller, card.uid);
+  buyer.hand.push(card);
+  sortHand(buyer);
+  const message = `${seller.name}は${buyer.name}へ「${card.name}」を￥${price}で売りました（支払い：${salePaymentText(payment)}）。`;
   finishTradeUse(game, seller, game.pendingTrade.tradeCardUid, message);
   return true;
 }
@@ -1182,14 +1202,14 @@ function executeCpuTrade(game, uid) {
 
   if (tradeCard.effect === "sell") {
     const sale = actor.hand.find(card => card.uid !== uid && !["sell", "buy", "exchange"].includes(card.effect));
-    if (sale && target.gold >= Number(sale.price || 0)) {
-      const price = Number(sale.price || 0);
-      target.gold -= price;
+    const price = Math.max(0, Number(sale?.price || 0));
+    const payment = sale ? paySalePrice(target, price) : null;
+    if (sale) {
       actor.gold = Math.min(99, actor.gold + price);
       removeCardFromHand(actor, sale.uid);
       target.hand.push(sale);
       sortHand(target);
-      finishTradeUse(game, actor, uid, `CPUは「${sale.name}」をあなたへ￥${price}で売りました。`);
+      finishTradeUse(game, actor, uid, `CPUは「${sale.name}」をあなたへ￥${price}で売りました（支払い：${salePaymentText(payment)}）。`);
     } else {
       finishTradeUse(game, actor, uid, "CPUの売却は成立しませんでした。");
     }
