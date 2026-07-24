@@ -8,6 +8,17 @@ function renderNow() {
   if (typeof window !== "undefined" && typeof window.renderGame === "function") window.renderGame();
 }
 
+function playUsedCardSounds(cards) {
+  if (typeof window === "undefined" || typeof window.playCardSound !== "function") return;
+  cards.filter(Boolean).forEach((card, index) => {
+    if (index === 0) {
+      window.playCardSound(card);
+    } else {
+      setTimeout(() => window.playCardSound(card), index * 55);
+    }
+  });
+}
+
 function createPlayer(name, isCpu = false) {
   return {
     name,
@@ -100,13 +111,26 @@ function playerHasWeapon(player) {
 }
 
 function selectAttackCard(game, uid) {
-  if (game.busy || game.winner || !["attack", "target"].includes(game.phase) || game.turn !== "player") return;
+  if (game.busy || game.winner || !["attack", "target", "utility_target"].includes(game.phase) || game.turn !== "player") return;
   const actor = getActor(game);
   const card = actor.hand.find(candidate => candidate.uid === uid);
   if (!card) return;
   game.focusedCard = card;
 
+  if (game.phase === "target" && uid === game.selectedAttackUid) {
+    cancelSelection(game);
+    return;
+  }
+  if (game.phase === "utility_target" && uid === game.selectedUtilityUid) {
+    cancelSelection(game);
+    return;
+  }
+
   if (isAdditionalAttackCard(card)) {
+    if (!game.selectedAttackUid) {
+      game.logs.unshift("先に武器カードを選択してください。");
+      return;
+    }
     const selected = game.selectedAttackEnhancementUids.includes(uid);
     game.selectedAttackEnhancementUids = selected
       ? game.selectedAttackEnhancementUids.filter(selectedUid => selectedUid !== uid)
@@ -118,6 +142,7 @@ function selectAttackCard(game, uid) {
   }
 
   if (card.type === "weapon") {
+    game.selectedUtilityUid = null;
     game.selectedAttackUid = uid;
     game.selectedAttackCard = card;
     game.phase = "target";
@@ -126,10 +151,14 @@ function selectAttackCard(game, uid) {
   }
 
   if (card.type === "item") {
+    game.selectedAttackUid = null;
+    game.selectedAttackCard = null;
     game.selectedAttackEnhancementUids = [];
     if (["sell", "buy", "exchange"].includes(card.effect)) {
+      game.phase = "attack";
       beginTrade(game, uid);
     } else if (card.effect === "random_event" && card.target === "all_players") {
+      game.phase = "attack";
       useUtilityAndEndTurn(game, uid, game.attackerId);
     } else {
       game.selectedUtilityUid = uid;
@@ -140,7 +169,11 @@ function selectAttackCard(game, uid) {
   }
 
   if (card.type === "magic") {
+    game.selectedAttackUid = null;
+    game.selectedAttackCard = null;
     game.selectedAttackEnhancementUids = [];
+    game.selectedUtilityUid = null;
+    game.phase = "attack";
     const targetId = card.target === "self" ? game.attackerId : opponentId(game.attackerId);
     useUtilityAndEndTurn(game, uid, targetId);
     return;
@@ -198,6 +231,7 @@ function startAttack(game, uid, defenderId) {
   const enhancementCards = game.selectedAttackEnhancementUids
     .map(selectedUid => removeCardFromHand(attacker, selectedUid))
     .filter(card => isAdditionalAttackCard(card));
+  playUsedCardSounds([used, ...enhancementCards]);
 
   if (used.effect === "random_target") defenderId = Math.random() < 0.5 ? "player" : "enemy";
   const defender = game[defenderId];
@@ -464,6 +498,7 @@ function useUtilityAndEndTurn(game, uid, targetId) {
 
   const used = removeCardFromHand(actor, uid);
   if (!used) return false;
+  playUsedCardSounds([used]);
   const resolvedTargetId = targetId || (used.target === "self" ? game.attackerId : opponentId(game.attackerId));
   const target = game[resolvedTargetId];
   const amount = Number(used.effectPower || used.heal || used.attack || 0);
@@ -609,6 +644,7 @@ function selectSellCard(game, uid) {
 
 function finishTradeUse(game, actor, tradeCardUid, message) {
   const tradeCard = removeCardFromHand(actor, tradeCardUid);
+  if (tradeCard) playUsedCardSounds([tradeCard]);
   if (tradeCard) drawCards(game, actor, 1);
   game.lastBattle = tradeCard ? {
     attackerId: game.attackerId,
@@ -818,6 +854,7 @@ function resolvePendingAttack(game) {
   const perHitDamage = pending.hit ? Math.max(0, pending.attack - defenseTotal) : 0;
   const damage = perHitDamage * Math.max(1, pending.hitCount || 1);
 
+  playUsedCardSounds(defenseCards);
   defenseCards.forEach(card => removeCardFromHand(defender, card.uid));
   defender.hp = Math.max(0, defender.hp - damage);
   if (damage > 0 && pending.card.effect === "instant_defeat") defender.hp = 0;

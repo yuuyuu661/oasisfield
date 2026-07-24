@@ -7,7 +7,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="stylesheet" href="style.css?v=9.6.0">
+  <link rel="stylesheet" href="style.css?v=9.7.0">
 </head>
 <body>
 
@@ -27,6 +27,12 @@
       </button>
     </div>
   </header>
+
+  <div class="sound-toolbar">
+    <label for="volumeSlider"><span aria-hidden="true">🔊</span><span>SE音量</span></label>
+    <input id="volumeSlider" type="range" min="0" max="100" value="35" aria-label="カード効果音の音量">
+    <output id="volumeValue" for="volumeSlider">35%</output>
+  </div>
 
   <main class="game-layout">
 
@@ -57,11 +63,6 @@
       </div>
 
       <div class="battle-controls">
-        <div id="targetBox" class="target-box hidden">
-          <button id="targetSelfBtn" class="ghost-btn">自分を選択</button>
-          <button id="targetEnemyBtn" class="primary-btn">CPUを選択</button>
-          <button id="cancelSelectBtn" class="ghost-btn">選択解除</button>
-        </div>
         <div class="action-row">
           <button id="confirmDefenseBtn" class="primary-btn hidden">防御確定</button>
           <button id="prayBtn" class="ghost-btn">祈る</button>
@@ -114,11 +115,6 @@
       <div id="playerHand" class="hand-grid"></div>
     </section>
 
-    <section class="log-panel panel">
-      <div class="panel-title">ログ</div>
-      <div id="logList" class="log-list"></div>
-    </section>
-
     <section class="detail-panel panel">
       <div class="panel-title">カード詳細</div>
       <div id="cardDetail" class="card-detail empty-detail">
@@ -129,13 +125,13 @@
   </main>
 </div>
 
-<script src="card-effects.js?v=9.6.0"></script>
-<script src="card-storage.js?v=9.6.0"></script>
-<script src="catalog.js?v=9.6.0"></script>
-<script src="cards.js?v=9.6.0"></script>
-<script src="guardians.js?v=9.6.0"></script>
-<script src="engine.js?v=9.6.0"></script>
-<script src="cpu.js?v=9.6.0"></script>
-<script src="script.js?v=9.6.0"></script>
+<script src="card-effects.js?v=9.7.0"></script>
+<script src="card-storage.js?v=9.7.0"></script>
+<script src="catalog.js?v=9.7.0"></script>
+<script src="cards.js?v=9.7.0"></script>
+<script src="guardians.js?v=9.7.0"></script>
+<script src="engine.js?v=9.7.0"></script>
+<script src="cpu.js?v=9.7.0"></script>
+<script src="script.js?v=9.7.0"></script>
 </body>
 </html>

@@ -1,4 +1,67 @@
 let game = null;
+const SOUND_VOLUME_KEY = "oasisFieldSoundVolume";
+let soundVolume = Math.max(0, Math.min(1, Number(localStorage.getItem(SOUND_VOLUME_KEY) ?? 35) / 100));
+let audioContext = null;
+
+function cardSoundHash(card) {
+  return String(card?.id || card?.name || "card")
+    .split("")
+    .reduce((hash, character) => ((hash * 31) + character.charCodeAt(0)) >>> 0, 7);
+}
+
+function getAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass || soundVolume <= 0) return null;
+  audioContext ||= new AudioContextClass();
+  if (audioContext.state === "suspended") audioContext.resume().catch(() => {});
+  return audioContext;
+}
+
+function playCardSound(card) {
+  const context = getAudioContext();
+  if (!context || !card) return;
+  const hash = cardSoundHash(card);
+  const elementPitch = {
+    none: 1, fire: 1.34, water: .82, wood: 1.08,
+    earth: .68, light: 1.62, dark: .56
+  }[card.element || "none"] || 1;
+  const waveform = {
+    weapon: "sawtooth", armor: "square", enchant: "square",
+    magic: "sine", item: "triangle"
+  }[card.type] || "sine";
+  const start = context.currentTime;
+  const duration = .12 + ((hash >>> 4) % 5) * .025;
+  const baseFrequency = (150 + (hash % 360)) * elementPitch;
+  const oscillator = context.createOscillator();
+  const overtone = context.createOscillator();
+  const gain = context.createGain();
+  const overtoneGain = context.createGain();
+
+  oscillator.type = waveform;
+  oscillator.frequency.setValueAtTime(baseFrequency, start);
+  oscillator.frequency.exponentialRampToValueAtTime(
+    Math.max(45, baseFrequency * (card.type === "armor" ? .72 : 1.18)),
+    start + duration
+  );
+  overtone.type = card.type === "magic" ? "triangle" : "sine";
+  overtone.frequency.setValueAtTime(baseFrequency * (1.5 + (hash % 3) * .25), start);
+
+  const peak = Math.max(.0001, soundVolume * .105);
+  gain.gain.setValueAtTime(.0001, start);
+  gain.gain.exponentialRampToValueAtTime(peak, start + .012);
+  gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
+  overtoneGain.gain.setValueAtTime(Math.max(.0001, peak * .28), start);
+  overtoneGain.gain.exponentialRampToValueAtTime(.0001, start + duration * .82);
+
+  oscillator.connect(gain).connect(context.destination);
+  overtone.connect(overtoneGain).connect(context.destination);
+  oscillator.start(start);
+  overtone.start(start);
+  oscillator.stop(start + duration);
+  overtone.stop(start + duration);
+}
+
+window.playCardSound = playCardSound;
 
 function ensureCompactPlayerPanel(prefix, name) {
   if (document.getElementById(`${prefix}Effects`)) return;
@@ -26,15 +89,13 @@ const els = {
   restartBtn: document.getElementById("restartBtn"),
   prayBtn: document.getElementById("prayBtn"),
   confirmDefenseBtn: document.getElementById("confirmDefenseBtn"),
-  cancelSelectBtn: document.getElementById("cancelSelectBtn"),
 
   enemyPanel: document.getElementById("enemyPanel"),
   playerPanel: document.getElementById("playerPanel"),
-  targetBox: document.getElementById("targetBox"),
-  targetSelfBtn: document.getElementById("targetSelfBtn"),
-  targetEnemyBtn: document.getElementById("targetEnemyBtn"),
   interactionPanel: document.getElementById("interactionPanel"),
   hitResult: document.getElementById("hitResult"),
+  volumeSlider: document.getElementById("volumeSlider"),
+  volumeValue: document.getElementById("volumeValue"),
 
   phaseBadge: document.getElementById("phaseBadge"),
   battleMessage: document.getElementById("battleMessage"),
@@ -60,7 +121,6 @@ const els = {
   enemyGuardian: document.getElementById("enemyGuardian"),
   handHelp: document.getElementById("handHelp"),
   playerHand: document.getElementById("playerHand"),
-  logList: document.getElementById("logList"),
   cardDetail: document.getElementById("cardDetail")
 };
 
@@ -73,7 +133,6 @@ function renderGame() {
   renderHand();
   renderDetail();
   renderInteraction();
-  renderLogs();
 }
 
 function renderHp() {
@@ -131,19 +190,19 @@ function renderPhase() {
     els.battleMessage.textContent = "両者のHPが同時に0になりました。";
   } else if (game.phase === "target") {
     els.phaseBadge.textContent = `${getActor(game).name}のターン`;
-    els.battleMessage.textContent = `「${game.selectedAttackCard.name}」の対象を選んでください。`;
+    els.battleMessage.textContent = `「${game.selectedAttackCard.name}」で攻撃する相手のステータスバーをタップしてください。`;
   } else if (game.phase === "utility_target") {
     els.phaseBadge.textContent = "アイテムの対象選択";
-    els.battleMessage.textContent = "自分またはCPUを選んでください。";
+    els.battleMessage.textContent = "アイテムを使う相手のステータスバーをタップしてください。";
   } else if (game.phase === "sell_card") {
     els.phaseBadge.textContent = "売却カード選択";
     els.battleMessage.textContent = "売りたいカードを手札から選んでください。";
   } else if (game.phase === "sell_target") {
     els.phaseBadge.textContent = "売却先選択";
-    els.battleMessage.textContent = "カードを売る相手を選んでください。";
+    els.battleMessage.textContent = "売却先のステータスバーをタップしてください。";
   } else if (game.phase === "buy_target") {
     els.phaseBadge.textContent = "購入先選択";
-    els.battleMessage.textContent = "カードを購入する相手を選んでください。";
+    els.battleMessage.textContent = "購入先のステータスバーをタップしてください。";
   } else if (game.phase === "buy_offer") {
     els.phaseBadge.textContent = "購入確認";
     els.battleMessage.textContent = "提示されたカードを購入するか選んでください。";
@@ -171,21 +230,24 @@ function renderPhase() {
   const canDefense = game.phase === "defense" && game.defenderId === "player" && !game.winner && !game.busy;
   const needsTarget = ["target", "utility_target", "sell_target", "buy_target"].includes(game.phase) && !game.busy;
   const canTargetSelf = game.phase === "utility_target" && !game.busy;
-  const isSelection = ["target", "utility_target", "sell_target", "buy_target", "buy_offer", "exchange"].includes(game.phase) && !game.busy;
   const canPray = canAttack && !playerHasWeapon(game.player);
 
   els.prayBtn.disabled = !canPray;
   els.confirmDefenseBtn.classList.toggle("hidden", !canDefense);
-  els.cancelSelectBtn.classList.toggle("hidden", !isSelection);
-  els.targetBox.classList.toggle("hidden", !isSelection);
   els.enemyPanel.classList.toggle("target-highlight", needsTarget);
   els.playerPanel.classList.toggle("target-highlight", canTargetSelf);
-  els.targetEnemyBtn.classList.toggle("hidden", !needsTarget);
-  els.targetSelfBtn.classList.toggle("hidden", !canTargetSelf);
+  setStatusBarTargetState(els.enemyPanel, needsTarget);
+  setStatusBarTargetState(els.playerPanel, canTargetSelf);
   els.hitResult.classList.toggle("hidden", !game.hitResult);
   els.hitResult.classList.toggle("hit", Boolean(game.hitResult?.hit));
   els.hitResult.classList.toggle("miss", game.hitResult?.hit === false);
   els.hitResult.textContent = game.hitResult?.text || "";
+}
+
+function setStatusBarTargetState(panel, active) {
+  panel.classList.toggle("status-target", active);
+  panel.setAttribute("aria-disabled", String(!active));
+  panel.tabIndex = active ? 0 : -1;
 }
 
 function currentBattle() {
@@ -297,7 +359,8 @@ function renderHand() {
   const canAttack = game.phase === "attack" && game.turn === "player" && !game.winner && !game.busy;
   const canDefense = game.phase === "defense" && game.defenderId === "player" && !game.winner && !game.busy;
   const isTarget = game.phase === "target" && game.turn === "player" && !game.busy;
-  const canChooseAttackCards = (canAttack || isTarget) && !game.winner;
+  const isUtilityTarget = game.phase === "utility_target" && game.turn === "player" && !game.busy;
+  const canChooseTurnCards = (canAttack || isTarget || isUtilityTarget) && !game.winner;
   const isSelectingSale = game.phase === "sell_card" && game.turn === "player" && !game.busy;
 
   els.handHelp.textContent = canDefense
@@ -305,15 +368,17 @@ function renderHand() {
     : isSelectingSale
       ? "売りたいカードを1枚選んでください。"
     : isTarget
-      ? "追加攻撃カードを選ぶか、攻撃対象を選んでください。"
+      ? "追加攻撃カードを選ぶか、相手のステータスバーをタップしてください。"
+    : isUtilityTarget
+      ? "選択中のカードをもう一度タップすると解除できます。"
       : "カードを選ぶと右下に詳細が表示されます。";
 
   game.player.hand.forEach(card => {
     const visibleCard = visibleCardForPlayer(card);
     const usableAsAttack = (
-      canChooseAttackCards && (card.type === "weapon" || isAdditionalAttackCard(card))
+      canChooseTurnCards && (card.type === "weapon" || isAdditionalAttackCard(card))
     ) || (
-      canAttack && (card.type === "item" || card.type === "magic")
+      canChooseTurnCards && (card.type === "item" || card.type === "magic")
     );
 
     const usableAsDefense = canDefense && isDefenseCard(card);
@@ -425,21 +490,64 @@ function renderInteraction() {
       renderGame();
     });
   } else if (game.phase === "exchange") {
-    const total = game.player.hp + game.player.mp + game.player.gold;
+    const original = {
+      hp: game.player.hp,
+      mp: game.player.mp,
+      gold: game.player.gold
+    };
+    const total = original.hp + original.mp + original.gold;
+    let draft = { ...original };
     panel.innerHTML = `
       <div class="exchange-box">
-        <strong>配分合計: ${total}</strong>
-        <label>HP <input id="exchangeHp" type="number" min="0" max="99" value="${game.player.hp}"></label>
-        <label>MP <input id="exchangeMp" type="number" min="0" max="99" value="${game.player.mp}"></label>
-        <label>ゴールド <input id="exchangeGold" type="number" min="0" max="99" value="${game.player.gold}"></label>
+        <strong>両替する値を調整（合計 ${total}）</strong>
+        <div class="exchange-resources">
+          <div class="exchange-resource exchange-hp">
+            <div class="exchange-step-row exchange-placeholder" aria-hidden="true"></div>
+            <div class="exchange-value"><span>HP</span><b id="exchangeHpValue">${draft.hp}</b></div>
+            <div class="exchange-step-row exchange-placeholder" aria-hidden="true"></div>
+          </div>
+          ${exchangeResourceHtml("mp", "MP", draft.mp)}
+          ${exchangeResourceHtml("gold", "￥", draft.gold)}
+        </div>
+        <div id="exchangeChanges" class="exchange-changes"></div>
         <button id="confirmExchangeBtn" class="primary-btn">この配分で両替</button>
         <p id="exchangeError"></p>
       </div>`;
+
+    const canAdjust = (resource, delta) => {
+      const next = { ...draft, [resource]: draft[resource] + delta };
+      next.hp = total - next.mp - next.gold;
+      return next[resource] >= 0 && next[resource] <= 99 && next.hp >= 0 && next.hp <= 99;
+    };
+
+    const updateExchangeView = () => {
+      document.getElementById("exchangeHpValue").textContent = draft.hp;
+      document.getElementById("exchangeMpValue").textContent = draft.mp;
+      document.getElementById("exchangeGoldValue").textContent = draft.gold;
+      document.getElementById("exchangeChanges").innerHTML = `
+        <span>HP ${original.hp} → <b>${draft.hp}</b></span>
+        <span>MP ${original.mp} → <b>${draft.mp}</b></span>
+        <span>￥ ${original.gold} → <b>${draft.gold}</b></span>`;
+      panel.querySelectorAll("[data-exchange-resource]").forEach(button => {
+        button.disabled = !canAdjust(button.dataset.exchangeResource, Number(button.dataset.exchangeDelta));
+      });
+    };
+
+    panel.querySelectorAll("[data-exchange-resource]").forEach(button => {
+      button.addEventListener("click", () => {
+        const resource = button.dataset.exchangeResource;
+        const delta = Number(button.dataset.exchangeDelta);
+        if (!canAdjust(resource, delta)) return;
+        draft[resource] += delta;
+        draft.hp = total - draft.mp - draft.gold;
+        document.getElementById("exchangeError").textContent = "";
+        updateExchangeView();
+      });
+    });
+
+    updateExchangeView();
     document.getElementById("confirmExchangeBtn")?.addEventListener("click", () => {
-      const hp = Number(document.getElementById("exchangeHp").value);
-      const mp = Number(document.getElementById("exchangeMp").value);
-      const gold = Number(document.getElementById("exchangeGold").value);
-      if (!confirmExchange(game, hp, mp, gold)) {
+      if (!confirmExchange(game, draft.hp, draft.mp, draft.gold)) {
         document.getElementById("exchangeError").textContent = `合計${total}になるように配分してください。`;
         return;
       }
@@ -450,14 +558,20 @@ function renderInteraction() {
   }
 }
 
-function renderLogs() {
-  els.logList.innerHTML = "";
-  game.logs.slice(0, 80).forEach(log => {
-    const div = document.createElement("div");
-    div.className = "log-item";
-    div.textContent = log;
-    els.logList.appendChild(div);
-  });
+function exchangeResourceHtml(resource, label, value) {
+  const id = resource === "mp" ? "Mp" : "Gold";
+  return `
+    <div class="exchange-resource">
+      <div class="exchange-step-row">
+        <button type="button" data-exchange-resource="${resource}" data-exchange-delta="10">+10</button>
+        <button type="button" data-exchange-resource="${resource}" data-exchange-delta="1">+1</button>
+      </div>
+      <div class="exchange-value"><span>${label}</span><b id="exchange${id}Value">${value}</b></div>
+      <div class="exchange-step-row">
+        <button type="button" data-exchange-resource="${resource}" data-exchange-delta="-1">-1</button>
+        <button type="button" data-exchange-resource="${resource}" data-exchange-delta="-10">-10</button>
+      </div>
+    </div>`;
 }
 
 function cardFace(card) {
@@ -583,34 +697,41 @@ els.confirmDefenseBtn?.addEventListener("click", () => {
   renderGame();
 });
 
-els.cancelSelectBtn?.addEventListener("click", () => {
-  cancelSelection(game);
+function activateStatusTarget(targetId) {
+  const validPhases = targetId === "player"
+    ? ["utility_target"]
+    : ["target", "utility_target", "sell_target", "buy_target"];
+  if (!validPhases.includes(game.phase) || game.busy) return;
+  chooseActionTarget(game, targetId);
   renderGame();
+}
+
+els.enemyPanel?.addEventListener("click", () => activateStatusTarget("enemy"));
+els.playerPanel?.addEventListener("click", () => activateStatusTarget("player"));
+
+[["enemy", els.enemyPanel], ["player", els.playerPanel]].forEach(([targetId, panel]) => {
+  panel?.addEventListener("keydown", event => {
+    if (!["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    activateStatusTarget(targetId);
+  });
 });
 
-els.targetEnemyBtn?.addEventListener("click", () => {
-  chooseActionTarget(game, "enemy");
-  renderGame();
-});
-
-els.targetSelfBtn?.addEventListener("click", () => {
-  chooseActionTarget(game, "player");
-  renderGame();
-});
-
-els.enemyPanel?.addEventListener("click", () => {
-  if (["target", "utility_target", "sell_target", "buy_target"].includes(game.phase) && !game.busy) {
-    chooseActionTarget(game, "enemy");
-    renderGame();
-  }
-});
-
-els.playerPanel?.addEventListener("click", () => {
-  if (game.phase === "utility_target" && !game.busy) {
-    chooseActionTarget(game, "player");
-    renderGame();
-  }
-});
+if (els.volumeSlider && els.volumeValue) {
+  const initialVolume = Math.round(soundVolume * 100);
+  els.volumeSlider.value = initialVolume;
+  els.volumeValue.value = `${initialVolume}%`;
+  els.volumeValue.textContent = `${initialVolume}%`;
+  els.volumeSlider.addEventListener("input", () => {
+    soundVolume = Number(els.volumeSlider.value) / 100;
+    els.volumeValue.value = `${els.volumeSlider.value}%`;
+    els.volumeValue.textContent = `${els.volumeSlider.value}%`;
+    localStorage.setItem(SOUND_VOLUME_KEY, els.volumeSlider.value);
+  });
+  els.volumeSlider.addEventListener("change", () => {
+    playCardSound({ id: "volume-preview", type: "item", element: "light" });
+  });
+}
 
 async function initializeGame() {
   await hydrateRegisteredCardImages();
