@@ -87,6 +87,18 @@ function cpuChooseDefense(game) {
     .sort((a, b) => (a.defense || 0) - (b.defense || 0));
 
   const rainbow = armors.find(card => card.effect === "element_change");
+  if (game.pendingAttack?.isMagic) {
+    const special = armors.find(card =>
+      ["reflect_magic", "nullify_magic"].includes(card.effect)
+      || ["reflect_magic", "nullify_magic"].includes(card.secondaryEffect)
+      || (card.sourceName || card.name) === "スーパーミラー"
+    );
+    if (special) {
+      defender.selectedDefense = [special.uid];
+      game.logs.unshift(`CPUは${special.name}で奇跡に対抗します。`);
+      return;
+    }
+  }
 
   if (defender.statuses.includes("flash")) {
     const strongest = [...armors].sort((a, b) => (b.defense || 0) - (a.defense || 0))[0];

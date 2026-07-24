@@ -114,6 +114,7 @@ function runWorldArtifact(game, owner, target, guardian) {
   if (!card) return "神器を授かれなかった";
   if (card.type === "armor" || card.type === "magic" || isAdditionalAttackCard(card)) {
     owner.hand.push(card);
+    sortHand(owner);
     return `${card.name}を手札に加えた`;
   }
   if (card.type === "weapon") {
@@ -143,6 +144,7 @@ function runWorldArtifact(game, owner, target, guardian) {
     owner.gold = Math.min(99, owner.gold + price);
     removeCardFromHand(owner, sale.uid);
     target.hand.push(sale);
+    sortHand(target);
     return `${sale.name}を${target.name}へ￥${price}で売った`;
   }
   if (card.effect === "buy") {
@@ -154,6 +156,7 @@ function runWorldArtifact(game, owner, target, guardian) {
     target.gold = Math.min(99, target.gold + price);
     removeCardFromHand(target, offer.uid);
     owner.hand.push(offer);
+    sortHand(owner);
     return `${offer.name}を${target.name}から￥${price}で買った`;
   }
   if (card.effect === "discard") {
@@ -218,9 +221,11 @@ function runWorldArtifact(game, owner, target, guardian) {
   }
   if (["revive", "custom"].includes(card.effect)) {
     owner.hand.push(card);
+    sortHand(owner);
     return `${card.name}を手札に加えた`;
   }
   owner.hand.push(card);
+  sortHand(owner);
   return `${card.name}を手札に加えた`;
 }
 

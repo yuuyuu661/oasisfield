@@ -714,9 +714,10 @@ button:disabled {
 }
 
 .hand-grid {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
   gap: 10px;
-  overflow-x: auto;
+  overflow: visible;
   padding: 8px 2px 4px;
 }
 
@@ -776,7 +777,8 @@ button:disabled {
 .learned-magic.disabled { opacity: .45; }
 
 .hand-card {
-  flex: 0 0 132px;
+  width: 100%;
+  min-width: 0;
   height: 205px;
   border-radius: 14px;
   padding: 8px;
@@ -785,6 +787,7 @@ button:disabled {
   box-shadow: 0 8px 16px rgba(0,0,0,.16);
   cursor: pointer;
   transition: .15s ease;
+  overflow: hidden;
 }
 
 .hand-card:hover {

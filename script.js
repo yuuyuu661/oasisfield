@@ -453,6 +453,7 @@ function renderImpactEffect(battle) {
 }
 
 function renderHand() {
+  sortHand(game.player);
   els.playerHand.innerHTML = "";
 
   const canAttack = game.phase === "attack" && game.turn === "player" && !game.winner && !game.busy;

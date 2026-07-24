@@ -42,6 +42,29 @@ function createPlayer(name, isCpu = false) {
   };
 }
 
+function handCardRank(card) {
+  if (card.type === "item") {
+    const tradeRank = { exchange: 0, buy: 1, sell: 2 }[card.effect];
+    return tradeRank === undefined ? 3 : tradeRank;
+  }
+  if (card.type === "weapon" && !isAdditionalAttackCard(card)) return 10;
+  if (isAdditionalAttackCard(card) || card.type === "enchant") return 20;
+  if (card.type === "armor") return 30;
+  if (card.type === "magic") return 40;
+  return 50;
+}
+
+function sortHand(player) {
+  player.hand.sort((left, right) => {
+    const rank = handCardRank(left) - handCardRank(right);
+    if (rank !== 0) return rank;
+    const catalog = String(left.id || "").localeCompare(String(right.id || ""), "ja");
+    if (catalog !== 0) return catalog;
+    return String(left.name || "").localeCompare(String(right.name || ""), "ja");
+  });
+  return player.hand;
+}
+
 function learnMagic(game, player, card) {
   if (!card || card.type !== "magic") return;
   const knownIndex = player.learnedMagics.findIndex(magic => magic.id === card.id);
@@ -156,6 +179,7 @@ function drawCard(game, player) {
     return null;
   }
   player.hand.push(card);
+  sortHand(player);
   return card;
 }
 
@@ -333,7 +357,16 @@ function selectedRainbowCurtain(game) {
 function canUseDefenseCard(game, card) {
   if (!isDefenseCard(card) || !game.pendingAttack?.hit) return false;
   const attackElement = game.pendingAttack.element || game.pendingAttack.card?.element || "none";
-  if (game.pendingAttack.isMagic) return ["reflect_magic", "nullify_magic"].includes(card.effect);
+  if (game.pendingAttack.isMagic) {
+    const isMagicSpecial = (
+      ["reflect_magic", "nullify_magic"].includes(card.effect)
+      || ["reflect_magic", "nullify_magic"].includes(card.secondaryEffect)
+      || (card.sourceName || card.name) === "スーパーミラー"
+    );
+    if (isMagicSpecial) return true;
+    if (Number(game.pendingAttack.attack || 0) <= 0) return false;
+    if (card.effect === "reflect_normal") return false;
+  }
   if (card.effect === "reflect_normal") {
     return (card.sourceName || card.name) === "スーパーミラー" || attackElement === "none";
   }
@@ -445,6 +478,66 @@ function startAttack(game, uid, defenderId) {
   game.busy = false;
   renderNow();
 
+  if (defender.isCpu) {
+    game.busy = true;
+    renderNow();
+    setTimeout(() => {
+      cpuChooseDefense(game);
+      renderNow();
+      setTimeout(() => resolvePendingAttack(game), RESOLVE_DELAY);
+    }, CPU_DELAY);
+  }
+  return true;
+}
+
+function beginMagicAttack(game, card, attackerId, defenderId) {
+  const attacker = game[attackerId];
+  const defender = game[defenderId];
+  const hit = defenderId === attackerId ? true : rollAttackHit(card, defender);
+  const attack = Number(card.attack || card.effectPower || 0);
+  game.attackerId = attackerId;
+  game.defenderId = defenderId;
+  game.pendingAttack = {
+    card,
+    enhancementCards: [],
+    element: card.element || "none",
+    attack,
+    hitCount: 1,
+    hit,
+    isMagic: true,
+    attackerId,
+    defenderId
+  };
+  game.lastBattle = {
+    attackerId,
+    defenderId,
+    attackCard: card,
+    attackCards: [card],
+    element: card.element || "none",
+    defenseCards: [],
+    attack,
+    defense: 0,
+    damage: hit ? "🎯 奇跡が命中" : "💨 奇跡は外れ"
+  };
+  game.hitResult = {
+    hit,
+    text: hit ? "奇跡が命中！ 属性に対応する防具を選べます" : "奇跡は外れました"
+  };
+  game.selectedUtilityUid = null;
+  defender.selectedDefense = [];
+  game.logs.unshift(`${attacker.name}の「${card.name}」は${hit ? "命中しました" : "外れました"}。`);
+
+  if (!hit || defenderId === attackerId) {
+    game.phase = "resolving";
+    game.busy = true;
+    renderNow();
+    setTimeout(() => resolvePendingAttack(game), RESOLVE_DELAY);
+    return true;
+  }
+
+  game.phase = "defense";
+  game.busy = false;
+  renderNow();
   if (defender.isCpu) {
     game.busy = true;
     renderNow();
@@ -682,33 +775,27 @@ function useUtilityAndEndTurn(game, uid, targetId) {
 
   if (used.type === "magic" && target !== actor) {
     let ward = null;
-    let wardSource = null;
     if (["reflect", "nullify"].includes(target.magicBarrier)) {
       ward = target.magicBarrier;
       target.magicBarrier = null;
-    } else {
-      wardSource = target.hand.find(card =>
-        card.effect === "reflect_magic"
-        || (card.effect === "nullify_magic" && (card.sourceName || card.name) !== "＜壁＞")
-        || ["reflect_magic", "nullify_magic"].includes(card.secondaryEffect)
-      );
-      if (wardSource) {
-        ward = (wardSource.effect === "reflect_magic" || wardSource.secondaryEffect === "reflect_magic")
-          ? "reflect"
-          : "nullify";
-        removeCardFromHand(target, wardSource.uid);
-        drawCard(game, target);
-      }
     }
     if (ward === "reflect") {
-      game.logs.unshift(`${target.name}は${wardSource?.name || "乱気流"}で「${used.name}」を反射しました。`);
+      game.logs.unshift(`${target.name}は乱気流で「${used.name}」を反射しました。`);
       resolvedTargetId = game.attackerId;
       target = actor;
     } else if (ward === "nullify") {
       magicNegated = true;
       hit = false;
-      resultText = `${target.name}が${wardSource?.name || "結界"}で奇跡を無効化`;
+      resultText = `${target.name}が結界で奇跡を無効化`;
     }
+  }
+
+  const isOffensiveMagic = used.type === "magic" && (
+    ["magic_attack", "magic_all_attack", "hp_drain"].includes(used.effect)
+    || used.effect === "inflict_status"
+  );
+  if (!magicNegated && isOffensiveMagic) {
+    return beginMagicAttack(game, used, game.attackerId, resolvedTargetId);
   }
 
   if (magicNegated) {
@@ -819,6 +906,7 @@ function useUtilityAndEndTurn(game, uid, targetId) {
     resultText = "太陽のお守りは手札にある間、HP0時に自動発動";
   } else if (used.effect === "custom" && (used.sourceName || used.name) === "あぶないウス") {
     actor.hand.push(played);
+    sortHand(actor);
     damagePlayer(game, actor, 1);
     resultText = "あぶないウスは捨てられず手札へ戻り、使用者に1ダメージ";
   }
@@ -927,6 +1015,7 @@ function completeSale(game, buyerId) {
     seller.gold = Math.min(99, seller.gold + price);
     removeCardFromHand(seller, card.uid);
     buyer.hand.push(card);
+    sortHand(buyer);
     message = `${seller.name}は${buyer.name}へ「${card.name}」を￥${price}で売りました。`;
   }
   finishTradeUse(game, seller, game.pendingTrade.tradeCardUid, message);
@@ -967,6 +1056,7 @@ function confirmPurchase(game, accept) {
       seller.gold = Math.min(99, seller.gold + price);
       removeCardFromHand(seller, offer.uid);
       buyer.hand.push(offer);
+      sortHand(buyer);
       message = `${buyer.name}は「${offer.name}」を￥${price}で購入しました。`;
     }
   }
@@ -1004,6 +1094,7 @@ function executeCpuTrade(game, uid) {
       actor.gold = Math.min(99, actor.gold + price);
       removeCardFromHand(actor, sale.uid);
       target.hand.push(sale);
+      sortHand(target);
       finishTradeUse(game, actor, uid, `CPUは「${sale.name}」をあなたへ￥${price}で売りました。`);
     } else {
       finishTradeUse(game, actor, uid, "CPUの売却は成立しませんでした。");
@@ -1016,6 +1107,7 @@ function executeCpuTrade(game, uid) {
       target.gold = Math.min(99, target.gold + price);
       removeCardFromHand(target, offer.uid);
       actor.hand.push(offer);
+      sortHand(actor);
       finishTradeUse(game, actor, uid, `CPUはあなたから「${offer.name}」を￥${price}で買いました。`);
     } else {
       finishTradeUse(game, actor, uid, "CPUは購入を見送りました。");
@@ -1117,25 +1209,51 @@ function resolvePendingAttack(game) {
   const defenseCards = selectedDefenseCards.filter(card =>
     card.effect === "element_change"
     || card.effect === "reflect_normal"
+    || (pending.isMagic && ["reflect_magic", "nullify_magic"].includes(card.effect))
+    || (pending.isMagic && ["reflect_magic", "nullify_magic"].includes(card.secondaryEffect))
     || defenseElementCanBlock(resolvedElement, card.element)
   );
-  const reflector = defenseCards.find(card => card.effect === "reflect_normal");
+  const reflector = defenseCards.find(card =>
+    card.effect === "reflect_normal"
+    || (pending.isMagic && card.effect === "reflect_magic")
+    || (pending.isMagic && card.secondaryEffect === "reflect_magic")
+  );
+  const nullifier = pending.isMagic
+    ? defenseCards.find(card => card.effect === "nullify_magic" || card.secondaryEffect === "nullify_magic")
+    : null;
+  const stopped = Boolean(reflector || nullifier);
   const defenseTotal = defenseCards.reduce((sum, card) => sum + (card.defense || 0), 0);
-  const perHitDamage = pending.hit && !reflector ? Math.max(0, pending.attack - defenseTotal) : 0;
+  const perHitDamage = pending.hit && !stopped ? Math.max(0, pending.attack - defenseTotal) : 0;
   const damage = perHitDamage * Math.max(1, pending.hitCount || 1);
 
   playUsedCardSounds(defenseCards);
   defenseCards.forEach(card => removeCardFromHand(defender, card.uid));
   damagePlayer(game, defender, damage);
+  let reflectedTarget = null;
   if (reflector) {
-    const reflectedTarget = (reflector.sourceName || reflector.name) === "乱弾武剣"
+    reflectedTarget = (reflector.sourceName || reflector.name) === "乱弾武剣"
       ? (Math.random() < 0.5 ? game.player : game.enemy)
       : attacker;
     damagePlayer(game, reflectedTarget, pending.attack * Math.max(1, pending.hitCount || 1));
+    if (pending.attack > 0 && resolvedElement === "dark") reflectedTarget.hp = 0;
+    if (pending.attack <= 0 && pending.card.statusEffect && pending.card.statusEffect !== "none") {
+      applyStatusEffect(game, reflectedTarget, pending.card.statusEffect);
+    }
     game.logs.unshift(`${reflector.name}が攻撃を${reflectedTarget.name}へ反射しました。`);
   }
+  if (nullifier) game.logs.unshift(`${nullifier.name}が奇跡を完全に止めました。`);
   if (damage > 0 && (pending.card.effect === "instant_defeat" || resolvedElement === "dark")) defender.hp = 0;
   if (damage > 0 && pending.card.statusEffect && pending.card.statusEffect !== "none") {
+    applyStatusEffect(game, defender, pending.card.statusEffect);
+  }
+  if (
+    pending.isMagic
+    && pending.attack <= 0
+    && pending.hit
+    && !stopped
+    && pending.card.statusEffect
+    && pending.card.statusEffect !== "none"
+  ) {
     applyStatusEffect(game, defender, pending.card.statusEffect);
   }
   if (damage > 0 && pending.card.effect === "hp_drain") healPlayer(game, attacker, damage);
