@@ -447,12 +447,13 @@ function startAttack(game, uid, defenderId) {
     .map(card => dreamTransformCard(game, attacker, card, candidate => isAdditionalAttackCard(candidate)));
   playUsedCardSounds([used, ...enhancementCards]);
 
+  let dangerousMortarTriggered = false;
   if ((used.sourceName || used.name) === "あぶないキネ") {
     const mortarOwnerId = livingPlayerIds(game).find(id => hasPassiveCard(game[id], "あぶないウス"));
     if (mortarOwnerId) {
       defenderId = mortarOwnerId;
-      damagePlayer(game, game[mortarOwnerId], 99);
-      game.logs.unshift(`あぶないキネが、あぶないウスを持つ${game[mortarOwnerId].name}に99ダメージを与えました。`);
+      dangerousMortarTriggered = true;
+      game.logs.unshift(`あぶないウスに反応し、あぶないキネの攻撃先が${game[mortarOwnerId].name}に固定されました。`);
     } else {
       defenderId = randomLivingPlayerId(game);
     }
@@ -463,6 +464,7 @@ function startAttack(game, uid, defenderId) {
   const additionalAttack = enhancementCards.reduce((sum, card) => sum + Number(card.attack || 0), 0);
   const attackElement = combineAttackElements([used, ...enhancementCards]);
   let attackValue = ((used.attack || 0) + additionalAttack + (attacker.attackBoost || 0)) * (attacker.attackMultiplier || 1);
+  if (dangerousMortarTriggered) attackValue = 99;
   if (used.effect === "mp_scaled_attack") {
     attackValue = attacker.mp * (used.effectPower || 2);
     attacker.mp = 0;
@@ -470,7 +472,9 @@ function startAttack(game, uid, defenderId) {
   const hitCount = used.effect === "multi_hit" ? Math.max(2, used.hitCount || 2) : 1;
   attacker.attackBoost = 0;
 
-  const hit = defenderId === game.attackerId || attacker.forceNextHit ? true : rollAttackHit(used, defender);
+  const hit = dangerousMortarTriggered || defenderId === game.attackerId || attacker.forceNextHit
+    ? true
+    : rollAttackHit(used, defender);
   const wallBlocked = defender.magicBarrier === "wall" && attackElement === "none";
   if (wallBlocked) defender.magicBarrier = null;
   game.defenderId = defenderId;
