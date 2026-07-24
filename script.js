@@ -475,8 +475,14 @@ function renderHand() {
 
   game.player.hand.forEach(card => {
     const visibleCard = visibleCardForPlayer(card);
+    const canAddToSelectedAttack = !isAdditionalAttackCard(card)
+      || !game.selectedAttackCard
+      || isAdditionalAttackCard(game.selectedAttackCard)
+      || attackCardAllowsEnhancements(game.selectedAttackCard);
     const usableAsAttack = (
-      canChooseTurnCards && (card.type === "weapon" || card.effect === "attack_defense" || isAdditionalAttackCard(card))
+      canChooseTurnCards
+      && canAddToSelectedAttack
+      && (card.type === "weapon" || card.effect === "attack_defense" || isAdditionalAttackCard(card))
     ) || (
       canChooseTurnCards && (card.type === "item" || card.type === "magic")
     );

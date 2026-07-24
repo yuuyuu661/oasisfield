@@ -186,6 +186,14 @@ function reflectionModeForCard(card) {
   return "reflect";
 }
 
+function attackCardAllowsEnhancements(card) {
+  return Boolean(card) && !(
+    card.isAllAttack
+    || card.target === "all_enemies"
+    || ["all_attack", "magic_all_attack"].includes(card.effect)
+  );
+}
+
 function drawCard(game, player) {
   if (player.hand.length >= MAX_HAND_SIZE) {
     game.logs.unshift(`${player.name}の手札は${MAX_HAND_SIZE}枚のため補充されませんでした。`);
@@ -232,6 +240,14 @@ function selectAttackCard(game, uid) {
   }
 
   if (isAdditionalAttackCard(card)) {
+    if (
+      game.selectedAttackCard
+      && !isAdditionalAttackCard(game.selectedAttackCard)
+      && !attackCardAllowsEnhancements(game.selectedAttackCard)
+    ) {
+      game.logs.unshift("全体攻撃カードにエンチャントカードは重ねられません。");
+      return;
+    }
     if (!game.selectedAttackUid) {
       game.selectedUtilityUid = null;
       game.selectedAttackUid = uid;
@@ -254,16 +270,20 @@ function selectAttackCard(game, uid) {
     const standaloneEnhancementUid = isAdditionalAttackCard(game.selectedAttackCard)
       ? game.selectedAttackUid
       : null;
+    const allowsEnhancements = attackCardAllowsEnhancements(card);
     game.selectedUtilityUid = null;
     game.selectedAttackUid = uid;
     game.selectedAttackCard = card;
-    if (standaloneEnhancementUid && standaloneEnhancementUid !== uid) {
+    if (allowsEnhancements && standaloneEnhancementUid && standaloneEnhancementUid !== uid) {
       game.selectedAttackEnhancementUids = [
         ...new Set([...game.selectedAttackEnhancementUids, standaloneEnhancementUid])
       ];
     }
+    if (!allowsEnhancements) game.selectedAttackEnhancementUids = [];
     game.phase = "target";
-    game.logs.unshift(`「${card.name}」を選択。追加攻撃カードを重ねるか、攻撃対象を選んでください。`);
+    game.logs.unshift(allowsEnhancements
+      ? `「${card.name}」を選択。追加攻撃カードを重ねるか、攻撃対象を選んでください。`
+      : `「${card.name}」を選択。全体攻撃にはエンチャントカードを重ねられません。`);
     return;
   }
 
@@ -418,7 +438,10 @@ function startAttack(game, uid, defenderId) {
       ? isAdditionalAttackCard(card)
       : card.type === "weapon" || card.effect === "attack_defense"
   );
-  const enhancementCards = game.selectedAttackEnhancementUids
+  const selectedEnhancementUids = attackCardAllowsEnhancements(used)
+    ? game.selectedAttackEnhancementUids
+    : [];
+  const enhancementCards = selectedEnhancementUids
     .map(selectedUid => removeCardFromHand(attacker, selectedUid))
     .filter(card => isAdditionalAttackCard(card))
     .map(card => dreamTransformCard(game, attacker, card, candidate => isAdditionalAttackCard(candidate)));

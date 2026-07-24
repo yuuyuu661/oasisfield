@@ -58,7 +58,9 @@ function cpuTakeAttackAction(game) {
   }
 
   const chosen = weapons[0];
-  const enhancements = cpu.hand.filter(card => isAdditionalAttackCard(card));
+  const enhancements = attackCardAllowsEnhancements(chosen)
+    ? cpu.hand.filter(card => isAdditionalAttackCard(card))
+    : [];
 
   game.busy = false;
   game.selectedAttackUid = chosen.uid;
