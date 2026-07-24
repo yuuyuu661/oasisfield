@@ -1,4 +1,5 @@
 let game = null;
+let renderedImpactId = null;
 const SOUND_VOLUME_KEY = "oasisFieldSoundVolume";
 let soundVolume = Math.max(0, Math.min(1, Number(localStorage.getItem(SOUND_VOLUME_KEY) ?? 35) / 100));
 let audioContext = null;
@@ -63,6 +64,50 @@ function playCardSound(card) {
 
 window.playCardSound = playCardSound;
 
+function playBattleImpact({ damage = 0, element = "none", blocked = false } = {}) {
+  const context = getAudioContext();
+  if (!context) return;
+  const start = context.currentTime;
+  const gain = context.createGain();
+  const primary = context.createOscillator();
+  const secondary = context.createOscillator();
+
+  if (blocked) {
+    primary.type = "square";
+    secondary.type = "sine";
+    primary.frequency.setValueAtTime(920, start);
+    primary.frequency.exponentialRampToValueAtTime(310, start + .12);
+    secondary.frequency.setValueAtTime(1380, start);
+    secondary.frequency.exponentialRampToValueAtTime(520, start + .09);
+  } else {
+    const tier = damage >= 30 ? 4 : damage >= 20 ? 3 : damage >= 10 ? 2 : 1;
+    const elementPitch = {
+      none: 1, fire: 1.28, water: .82, wood: 1.08, wind: 1.18,
+      earth: .66, light: 1.52, dark: .54
+    }[element] || 1;
+    const base = (105 + tier * 42) * elementPitch;
+    primary.type = tier >= 3 ? "sawtooth" : "triangle";
+    secondary.type = element === "dark" ? "square" : "sine";
+    primary.frequency.setValueAtTime(base * 1.8, start);
+    primary.frequency.exponentialRampToValueAtTime(Math.max(45, base), start + .1 + tier * .035);
+    secondary.frequency.setValueAtTime(base * (tier >= 3 ? .72 : 1.45), start);
+  }
+
+  const duration = blocked ? .16 : .11 + Math.min(4, Math.max(1, Math.ceil(damage / 10))) * .045;
+  const peak = Math.max(.0001, soundVolume * (blocked ? .12 : .08 + Math.min(damage, 40) * .002));
+  gain.gain.setValueAtTime(.0001, start);
+  gain.gain.exponentialRampToValueAtTime(peak, start + .008);
+  gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
+  primary.connect(gain).connect(context.destination);
+  secondary.connect(gain);
+  primary.start(start);
+  secondary.start(start);
+  primary.stop(start + duration);
+  secondary.stop(start + duration);
+}
+
+window.playBattleImpact = playBattleImpact;
+
 function ensureCompactPlayerPanel(prefix, name) {
   if (document.getElementById(`${prefix}Effects`)) return;
   const panel = document.getElementById(`${prefix}Panel`);
@@ -88,7 +133,6 @@ ensureCompactPlayerPanel("player", "あなた");
 const els = {
   restartBtn: document.getElementById("restartBtn"),
   prayBtn: document.getElementById("prayBtn"),
-  confirmDefenseBtn: document.getElementById("confirmDefenseBtn"),
 
   enemyPanel: document.getElementById("enemyPanel"),
   playerPanel: document.getElementById("playerPanel"),
@@ -128,8 +172,8 @@ window.renderGame = renderGame;
 
 function renderGame() {
   renderHp();
-  renderPhase();
   renderArena();
+  renderPhase();
   renderHand();
   renderDetail();
   renderInteraction();
@@ -217,7 +261,7 @@ function renderPhase() {
     els.battleMessage.textContent = "CPUが行動中です。";
   } else if (game.phase === "defense" && game.defenderId === "player") {
     els.phaseBadge.textContent = "命中・あなたの防御";
-    els.battleMessage.textContent = "命中しました。防具を好きな枚数選び、防御確定を押してください。";
+    els.battleMessage.textContent = "防具を選び、自分のバトル場またはステータスバーをタップして確定してください。";
   } else if (game.phase === "defense" && game.defenderId === "enemy") {
     els.phaseBadge.textContent = "命中・CPUの防御";
     els.battleMessage.textContent = "CPUが防御中です。";
@@ -233,15 +277,21 @@ function renderPhase() {
   const canPray = canAttack && !playerHasWeapon(game.player);
 
   els.prayBtn.disabled = !canPray;
-  els.confirmDefenseBtn.classList.toggle("hidden", !canDefense);
   els.enemyPanel.classList.toggle("target-highlight", needsTarget);
-  els.playerPanel.classList.toggle("target-highlight", canTargetSelf);
+  els.playerPanel.classList.toggle("target-highlight", canTargetSelf || canDefense);
   setStatusBarTargetState(els.enemyPanel, needsTarget);
-  setStatusBarTargetState(els.playerPanel, canTargetSelf);
+  setStatusBarTargetState(els.playerPanel, canTargetSelf || canDefense);
+  setDefenseConfirmState(canDefense);
   els.hitResult.classList.toggle("hidden", !game.hitResult);
   els.hitResult.classList.toggle("hit", Boolean(game.hitResult?.hit));
   els.hitResult.classList.toggle("miss", game.hitResult?.hit === false);
   els.hitResult.textContent = game.hitResult?.text || "";
+}
+
+function setDefenseConfirmState(active) {
+  els.arenaDefenseCards.classList.toggle("defense-confirm-target", active);
+  els.arenaDefenseCards.setAttribute("aria-disabled", String(!active));
+  els.arenaDefenseCards.tabIndex = active ? 0 : -1;
 }
 
 function setStatusBarTargetState(panel, active) {
@@ -314,6 +364,7 @@ function renderArena() {
     els.calcView.textContent = "攻撃 0 - 防御 0 = 0";
     els.damageView.textContent = "待機中";
     els.damageView.dataset.element = "none";
+    clearImpactEffect();
     return;
   }
 
@@ -344,13 +395,36 @@ function renderArena() {
   if (battle.damage === null) {
     els.damageView.textContent = "待機中";
     els.damageView.classList.remove("pop");
+    clearImpactEffect();
   } else if (typeof battle.damage === "string") {
     els.damageView.textContent = battle.damage;
     els.damageView.classList.add("pop");
+    clearImpactEffect();
   } else {
     els.damageView.textContent = `💥 ${battle.damage}ダメージ`;
     els.damageView.classList.add("pop");
+    renderImpactEffect(battle);
   }
+}
+
+function clearImpactEffect() {
+  els.damageView.classList.remove("impact-active", "impact-tier-1", "impact-tier-2", "impact-tier-3", "impact-tier-4", "impact-blocked");
+  els.damageView.removeAttribute("data-impact-mark");
+}
+
+function renderImpactEffect(battle) {
+  const damage = Number(battle.damage || 0);
+  const impactId = battle.resolvedAt || `${battle.attackerId}-${battle.defenderId}-${damage}-${battle.attackCard?.uid || ""}`;
+  const element = battle.element || battle.attackCard?.element || "none";
+  const tier = damage >= 30 ? 4 : damage >= 20 ? 3 : damage >= 10 ? 2 : 1;
+  clearImpactEffect();
+  els.damageView.dataset.element = element;
+  els.damageView.dataset.impactMark = battle.blocked ? "盾" : (elementInfo(element)?.symbol || "撃");
+  els.damageView.classList.add(battle.blocked ? "impact-blocked" : `impact-tier-${tier}`);
+  if (renderedImpactId === impactId) return;
+  renderedImpactId = impactId;
+  void els.damageView.offsetWidth;
+  els.damageView.classList.add("impact-active");
 }
 
 function renderHand() {
@@ -364,7 +438,7 @@ function renderHand() {
   const isSelectingSale = game.phase === "sell_card" && game.turn === "player" && !game.busy;
 
   els.handHelp.textContent = canDefense
-    ? "防具カードを複数選択できます。選んだら防御確定。"
+    ? "防具カードを選び、自分のバトル場またはステータスバーをタップして防御を確定します。"
     : isSelectingSale
       ? "売りたいカードを1枚選んでください。"
     : isTarget
@@ -432,7 +506,6 @@ function renderDetail() {
   els.cardDetail.innerHTML = `
     <div class="detail-image">${cardImageHtml(card)}</div>
     <h2>${card.name}</h2>
-    <div class="detail-type">${typeLabel(card.type)} / ${elementLabel(card.element)}</div>
     <div class="detail-effect">${cardEffectLabel(card.type, card.effect)}</div>
     <div class="detail-stats">
       ${card.attack ? `<span>攻撃 ${card.attack}</span>` : ""}
@@ -441,6 +514,7 @@ function renderDetail() {
       ${card.type === "magic" ? `<span>MP消費 ${card.mpCost || 0}</span>` : ""}
       <span>価格 ￥${card.price || 0}</span>
       ${(card.effectChance ?? 100) < 100 ? `<span>命中率 ${card.effectChance}%</span>` : ""}
+      ${elementBadgeHtml(card.element, false)}
     </div>
     <p>${card.desc || ""}</p>
   `;
@@ -635,49 +709,49 @@ function defaultIcon(type) {
   return "🃏";
 }
 
-function typeLabel(type) {
-  if (type === "weapon") return "武器";
-  if (type === "armor") return "防具";
-  if (type === "enchant") return "エンチャント";
-  if (type === "magic") return "魔法";
-  if (type === "item") return "アイテム";
-  return type;
+function elementInfo(element) {
+  return {
+    fire: { label: "火", symbol: "火" },
+    water: { label: "水", symbol: "水" },
+    wood: { label: "木", symbol: "木" },
+    wind: { label: "風", symbol: "風" },
+    earth: { label: "土", symbol: "土" },
+    light: { label: "光", symbol: "光" },
+    dark: { label: "闇", symbol: "闇" }
+  }[element] || null;
 }
 
-function elementLabel(element) {
-  const map = {
-    none: "無",
-    fire: "火",
-    water: "水",
-    wood: "木",
-    earth: "土",
-    light: "光",
-    dark: "闇"
-  };
-  return map[element] || "無";
+function elementBadgeHtml(element, showLabel = false) {
+  const info = elementInfo(element);
+  if (!info) return "";
+  return `<span class="element-badge element-${element}${showLabel ? " element-badge-labeled" : ""}" title="${info.label}属性" aria-label="${info.label}属性"><b aria-hidden="true">${info.symbol}</b>${showLabel ? `<em>${info.label}属性</em>` : ""}</span>`;
+}
+
+function statWithElement(text, card) {
+  return `${text}${elementBadgeHtml(card.element, false)}`;
 }
 
 function statText(card) {
   const chance = (card.effectChance ?? 100) < 100 ? ` / 命中${card.effectChance}%` : "";
-  if (isAdditionalAttackCard(card)) return `追加攻撃 +${card.attack || 0}${chance}`;
-  if (card.type === "weapon") return `攻撃 ${card.attack || 0}${card.effect === "multi_hit" ? `×${card.hitCount || 2}` : ""}${chance}`;
-  if (isDefenseCard(card)) return `防御 ${card.defense || 0}`;
-  if (isHealingCard(card)) return `回復 ${card.heal || card.effectPower || 0}`;
-  if (card.type === "magic") return `MP ${card.mpCost || 0}${chance}`;
-  return `￥${card.price || 0}`;
+  if (isAdditionalAttackCard(card)) return statWithElement(`追加攻撃 +${card.attack || 0}${chance}`, card);
+  if (card.type === "weapon") return statWithElement(`攻撃 ${card.attack || 0}${card.effect === "multi_hit" ? `×${card.hitCount || 2}` : ""}${chance}`, card);
+  if (isDefenseCard(card)) return statWithElement(`防御 ${card.defense || 0}`, card);
+  if (isHealingCard(card)) return statWithElement(`回復 ${card.heal || card.effectPower || 0}`, card);
+  if (card.type === "magic") return statWithElement(`MP ${card.mpCost || 0}${chance}`, card);
+  return statWithElement(`￥${card.price || 0}`, card);
 }
 
 function shortStatText(card) {
   const chance = (card.effectChance ?? 100) < 100 ? `${card.effectChance}%` : "";
-  if (isAdditionalAttackCard(card)) return `${chance}+攻${card.attack || 0}`;
+  if (isAdditionalAttackCard(card)) return statWithElement(`${chance}+攻${card.attack || 0}`, card);
   if (card.type === "weapon") {
     const hits = card.effect === "multi_hit" ? `×${card.hitCount || 2}` : "";
-    return `${chance}攻${card.attack || 0}${hits}`;
+    return statWithElement(`${chance}攻${card.attack || 0}${hits}`, card);
   }
-  if (isDefenseCard(card)) return `守${card.defense || 0}`;
-  if (isHealingCard(card)) return `回${card.heal || card.effectPower || 0}`;
-  if (card.type === "magic") return `${chance}MP${card.mpCost || 0}`;
-  return `￥${card.price || 0}`;
+  if (isDefenseCard(card)) return statWithElement(`守${card.defense || 0}`, card);
+  if (isHealingCard(card)) return statWithElement(`回${card.heal || card.effectPower || 0}`, card);
+  if (card.type === "magic") return statWithElement(`${chance}MP${card.mpCost || 0}`, card);
+  return statWithElement(`￥${card.price || 0}`, card);
 }
 
 els.restartBtn?.addEventListener("click", () => {
@@ -691,11 +765,11 @@ els.prayBtn?.addEventListener("click", () => {
   renderGame();
 });
 
-els.confirmDefenseBtn?.addEventListener("click", () => {
+function confirmPlayerDefense() {
   if (game.phase !== "defense" || game.defenderId !== "player" || game.winner || game.busy) return;
   resolvePendingAttack(game);
   renderGame();
-});
+}
 
 function activateStatusTarget(targetId) {
   const validPhases = targetId === "player"
@@ -707,14 +781,25 @@ function activateStatusTarget(targetId) {
 }
 
 els.enemyPanel?.addEventListener("click", () => activateStatusTarget("enemy"));
-els.playerPanel?.addEventListener("click", () => activateStatusTarget("player"));
+els.playerPanel?.addEventListener("click", () => {
+  if (game.phase === "defense") confirmPlayerDefense();
+  else activateStatusTarget("player");
+});
+els.arenaDefenseCards?.addEventListener("click", confirmPlayerDefense);
 
 [["enemy", els.enemyPanel], ["player", els.playerPanel]].forEach(([targetId, panel]) => {
   panel?.addEventListener("keydown", event => {
     if (!["Enter", " "].includes(event.key)) return;
     event.preventDefault();
-    activateStatusTarget(targetId);
+    if (targetId === "player" && game.phase === "defense") confirmPlayerDefense();
+    else activateStatusTarget(targetId);
   });
+});
+
+els.arenaDefenseCards?.addEventListener("keydown", event => {
+  if (!["Enter", " "].includes(event.key)) return;
+  event.preventDefault();
+  confirmPlayerDefense();
 });
 
 if (els.volumeSlider && els.volumeValue) {

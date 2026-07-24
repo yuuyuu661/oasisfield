@@ -504,6 +504,7 @@ function useUtilityAndEndTurn(game, uid, targetId) {
   const amount = Number(used.effectPower || used.heal || used.attack || 0);
   let resultText = cardEffectLabel(used.type, used.effect);
   let hit = true;
+  let dealtDamage = null;
 
   if (used.effect === "heal" || used.effect === "heal_hp") {
     healPlayer(game, target, amount);
@@ -535,12 +536,16 @@ function useUtilityAndEndTurn(game, uid, targetId) {
     resultText = `${target.name}の災いを解除`;
   } else if (used.effect === "inflict_status") {
     hit = rollAttackHit(used, target);
-    if (hit && (used.attack || 0) > 0) target.hp = Math.max(0, target.hp - used.attack);
+    if (hit && (used.attack || 0) > 0) {
+      dealtDamage = Number(used.attack || 0);
+      target.hp = Math.max(0, target.hp - dealtDamage);
+    }
     if (hit) applyStatusEffect(game, target, used.statusEffect);
     resultText = hit ? `${target.name}に${STATUS_EFFECTS[used.statusEffect] || "災い"}を付与` : "魔法は外れました";
   } else if (["magic_attack", "magic_all_attack", "hp_drain"].includes(used.effect)) {
     hit = rollAttackHit(used, target);
     const damage = hit ? Math.max(0, amount) : 0;
+    if (hit) dealtDamage = damage;
     target.hp = Math.max(0, target.hp - damage);
     if (used.effect === "hp_drain") healPlayer(game, actor, damage);
     resultText = hit ? `${target.name}に${damage}ダメージ（魔法は防御不可）` : "魔法は外れました";
@@ -550,6 +555,7 @@ function useUtilityAndEndTurn(game, uid, targetId) {
       resultText = `${target.name}のHPを${amount}回復`;
     } else {
       target.hp = Math.max(0, target.hp - amount);
+      dealtDamage = amount;
       resultText = `${target.name}に${amount}ダメージ`;
     }
   } else if (used.effect === "summon_guardian") {
@@ -557,6 +563,7 @@ function useUtilityAndEndTurn(game, uid, targetId) {
     resultText = guardian ? `${target.name}に${guardian.name}を召喚` : "守護神を召喚できない";
   } else if (used.effect === "self_damage") {
     actor.hp = Math.max(0, actor.hp - amount);
+    dealtDamage = amount;
     resultText = `${actor.name}に${amount}ダメージ`;
   } else if (used.effect === "discard") {
     const count = Math.min(target.hand.length, Math.max(1, amount));
@@ -602,8 +609,17 @@ function useUtilityAndEndTurn(game, uid, targetId) {
     defenseCards: [],
     attack: used.attack || amount,
     defense: 0,
-    damage: resultText
+    damage: dealtDamage ?? resultText,
+    blocked: false,
+    resolvedAt: dealtDamage === null ? null : Date.now()
   };
+  if (dealtDamage !== null && hit && typeof window !== "undefined" && typeof window.playBattleImpact === "function") {
+    window.playBattleImpact({
+      damage: dealtDamage,
+      element: used.element || "none",
+      blocked: false
+    });
+  }
   game.selectedUtilityUid = null;
   drawCards(game, actor, 1);
   checkWinner(game);
@@ -875,8 +891,17 @@ function resolvePendingAttack(game) {
     attack: pending.attack,
     defense: defenseTotal,
     hitCount: pending.hitCount,
-    damage: pending.hit ? damage : "💨 外れ"
+    damage: pending.hit ? damage : "💨 外れ",
+    blocked: pending.hit && damage === 0 && defenseCards.length > 0,
+    resolvedAt: Date.now()
   };
+  if (pending.hit && typeof window !== "undefined" && typeof window.playBattleImpact === "function") {
+    window.playBattleImpact({
+      damage,
+      element: pending.element || pending.card.element || "none",
+      blocked: game.lastBattle.blocked
+    });
+  }
   const defenseText = defenseCards.length
     ? defenseCards.map(card => `${card.name}(${card.defense})`).join(" + ")
     : "防御なし";

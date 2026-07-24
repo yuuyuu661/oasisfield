@@ -267,6 +267,40 @@ button:disabled {
   margin-top: 8px;
 }
 
+.pray-btn {
+  min-width: 190px;
+  min-height: 52px;
+  border: 3px solid #fff4aa;
+  border-radius: 14px;
+  padding: 9px 22px;
+  background: linear-gradient(180deg, #ffe878, #ffbd28);
+  color: #4e3500;
+  box-shadow: 0 5px 0 #d98f00, 0 8px 18px rgba(119,76,0,.26);
+  font-size: 20px;
+  font-weight: 1000;
+  text-shadow: 0 1px 0 rgba(255,255,255,.7);
+  touch-action: manipulation;
+}
+
+.pray-btn:not(:disabled) {
+  animation: prayGlow 1.6s ease-in-out infinite;
+}
+
+.pray-btn:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #d98f00, 0 4px 10px rgba(119,76,0,.2);
+}
+
+.pray-btn:disabled {
+  opacity: .42;
+  filter: grayscale(.35);
+  box-shadow: none;
+}
+
+@keyframes prayGlow {
+  50% { box-shadow: 0 5px 0 #d98f00, 0 0 0 5px rgba(255,211,77,.3), 0 9px 22px rgba(119,76,0,.3); }
+}
+
 .target-box {
   display: flex;
   flex-wrap: wrap;
@@ -471,20 +505,84 @@ button:disabled {
 }
 
 .damage-view {
+  --impact-color: #e11d48;
   margin-top: 10px;
+  position: relative;
+  isolation: isolate;
   font-size: 22px;
   color: #e11d48;
   font-weight: 1000;
   transition: color .2s ease, text-shadow .2s ease;
 }
 
-.damage-view[data-element="none"] { color: #e11d48; }
-.damage-view[data-element="fire"] { color: #ef2f24; text-shadow: 0 0 12px rgba(255, 92, 28, .55); }
-.damage-view[data-element="water"] { color: #1677ff; text-shadow: 0 0 12px rgba(22, 119, 255, .42); }
-.damage-view[data-element="wood"] { color: #15803d; text-shadow: 0 0 12px rgba(34, 197, 94, .4); }
-.damage-view[data-element="earth"] { color: #9a5b16; text-shadow: 0 0 12px rgba(180, 112, 32, .42); }
-.damage-view[data-element="light"] { color: #d59b00; text-shadow: 0 0 12px rgba(255, 224, 74, .7); }
-.damage-view[data-element="dark"] { color: #7c3aed; text-shadow: 0 0 12px rgba(124, 58, 237, .5); }
+.damage-view[data-element="none"] { --impact-color: #e11d48; color: #e11d48; }
+.damage-view[data-element="fire"] { --impact-color: #ef2f24; color: #ef2f24; text-shadow: 0 0 12px rgba(255, 92, 28, .55); }
+.damage-view[data-element="water"] { --impact-color: #1677ff; color: #1677ff; text-shadow: 0 0 12px rgba(22, 119, 255, .42); }
+.damage-view[data-element="wood"],
+.damage-view[data-element="wind"] { --impact-color: #15803d; color: #15803d; text-shadow: 0 0 12px rgba(34, 197, 94, .4); }
+.damage-view[data-element="earth"] { --impact-color: #9a5b16; color: #9a5b16; text-shadow: 0 0 12px rgba(180, 112, 32, .42); }
+.damage-view[data-element="light"] { --impact-color: #d59b00; color: #d59b00; text-shadow: 0 0 12px rgba(255, 224, 74, .7); }
+.damage-view[data-element="dark"] { --impact-color: #7c3aed; color: #7c3aed; text-shadow: 0 0 12px rgba(124, 58, 237, .5); }
+
+.damage-view.impact-active::before,
+.damage-view.impact-active::after {
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+}
+
+.damage-view.impact-active::before {
+  content: attr(data-impact-mark);
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin: -27px;
+  border: 4px solid var(--impact-color);
+  border-radius: 50%;
+  color: var(--impact-color);
+  opacity: 0;
+  animation: impactMark .7s ease-out;
+}
+
+.damage-view.impact-active::after {
+  content: "";
+  width: 30px;
+  height: 30px;
+  margin: -15px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--impact-color) 68%, white), transparent 68%);
+  opacity: 0;
+  animation: impactBurst .65s ease-out;
+}
+
+.damage-view.impact-active.impact-tier-1 { animation: impactShake1 .28s ease-out; }
+.damage-view.impact-active.impact-tier-2 { animation: impactShake2 .38s ease-out; }
+.damage-view.impact-active.impact-tier-3 { animation: impactShake3 .48s ease-out; }
+.damage-view.impact-active.impact-tier-4 { animation: impactShake4 .62s ease-out; }
+.damage-view.impact-active.impact-tier-2::before { width: 70px; height: 70px; margin: -35px; }
+.damage-view.impact-active.impact-tier-3::before { width: 90px; height: 90px; margin: -45px; border-width: 6px; font-size: 26px; }
+.damage-view.impact-active.impact-tier-4::before { width: 116px; height: 116px; margin: -58px; border-width: 8px; font-size: 34px; }
+.damage-view.impact-active.impact-blocked { animation: shieldBlock .42s ease-out; color: #64748b; }
+.damage-view.impact-active.impact-blocked::before { border-color: #94a3b8; color: #475569; }
+
+@keyframes impactMark {
+  0% { transform: scale(.2) rotate(-18deg); opacity: .95; }
+  100% { transform: scale(1.55) rotate(8deg); opacity: 0; }
+}
+
+@keyframes impactBurst {
+  0% { transform: scale(.3); opacity: .85; }
+  100% { transform: scale(5); opacity: 0; }
+}
+
+@keyframes impactShake1 { 35% { transform: translateX(-2px); } 70% { transform: translateX(2px); } }
+@keyframes impactShake2 { 25% { transform: translateX(-4px) scale(1.05); } 65% { transform: translateX(4px); } }
+@keyframes impactShake3 { 20% { transform: translate(-6px, 2px) scale(1.1); } 55% { transform: translate(6px, -2px); } }
+@keyframes impactShake4 { 15% { transform: translate(-9px, 3px) scale(1.18); } 42% { transform: translate(9px, -3px); } 72% { transform: translate(-5px, 1px); } }
+@keyframes shieldBlock { 30% { transform: scale(.88); } 60% { transform: scale(1.08); } }
 
 .damage-view.pop {
   animation: pop .5s ease;
@@ -515,6 +613,14 @@ button:disabled {
   cursor: pointer;
   touch-action: manipulation;
   animation: statusTargetPulse 1.25s ease-in-out infinite;
+}
+
+.combat-card-list.defense-confirm-target {
+  cursor: pointer;
+  border-color: #ffd34d;
+  box-shadow: 0 0 0 4px rgba(255,211,77,.3);
+  animation: statusTargetPulse 1.25s ease-in-out infinite;
+  touch-action: manipulation;
 }
 
 @keyframes statusTargetPulse {
@@ -678,6 +784,48 @@ button:disabled {
   color: #0f766e;
 }
 
+.element-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 5px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 13%, white);
+  color: #475569;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 1000;
+  line-height: 1;
+  vertical-align: middle;
+  text-shadow: none;
+}
+
+.element-badge b {
+  color: inherit;
+  font: inherit;
+}
+
+.element-badge.element-fire { color: #dc2626; }
+.element-badge.element-water { color: #2563eb; }
+.element-badge.element-wood,
+.element-badge.element-wind { color: #16a34a; }
+.element-badge.element-earth { color: #a16207; }
+.element-badge.element-light { color: #d69e00; }
+.element-badge.element-dark { color: #7c3aed; }
+
+.detail-stats > .element-badge {
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  background: color-mix(in srgb, currentColor 13%, white);
+  font-size: 16px;
+}
+
 .battle-card {
   width: 130px;
   min-height: 160px;
@@ -764,15 +912,6 @@ button:disabled {
 
 .card-detail h2 {
   margin: 0;
-}
-
-.detail-type {
-  display: inline-block;
-  width: fit-content;
-  background: rgba(255,255,255,.55);
-  border-radius: 999px;
-  padding: 6px 10px;
-  font-weight: 1000;
 }
 
 .detail-effect {
@@ -1537,10 +1676,6 @@ button:disabled {
     grid-column: 1 / -1;
   }
 
-  #prayBtn:disabled {
-    display: none;
-  }
-
   .interaction-panel {
     padding: 6px;
     border-radius: 7px;
@@ -1626,6 +1761,21 @@ button:disabled {
   .hand-card .mobile-card-stat,
   .battle-card .mobile-card-stat {
     display: inline;
+  }
+
+  .pray-btn {
+    width: 100%;
+    min-height: 48px;
+    font-size: 18px;
+  }
+
+  .hand-card .element-badge,
+  .battle-card .element-badge {
+    width: 18px;
+    height: 18px;
+    margin-left: 2px;
+    border-width: 1px;
+    font-size: 10px;
   }
 
   .players-panel {
