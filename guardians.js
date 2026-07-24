@@ -120,17 +120,105 @@ function runWorldArtifact(game, owner, target, guardian) {
     resolveGuardianAttack(game, owner, target, guardian, { ...card, name: card.name, attack: card.attack });
     return `${card.name}で攻撃した`;
   }
+  if (card.effect === "exchange") {
+    const total = owner.hp + owner.mp + owner.gold;
+    const minHp = Math.max(0, total - 198);
+    const maxHp = Math.min(99, total);
+    const hp = minHp + Math.floor(Math.random() * (maxHp - minHp + 1));
+    const remaining = total - hp;
+    const minMp = Math.max(0, remaining - 99);
+    const maxMp = Math.min(99, remaining);
+    const mp = minMp + Math.floor(Math.random() * (maxMp - minMp + 1));
+    owner.hp = hp;
+    owner.mp = mp;
+    owner.gold = total - hp - mp;
+    return `${card.name}でHP${owner.hp}・MP${owner.mp}・￥${owner.gold}へ無作為に両替した`;
+  }
+  if (card.effect === "sell") {
+    const sale = owner.hand[Math.floor(Math.random() * owner.hand.length)];
+    if (!sale) return `${card.name}を使ったが売る神器がなかった`;
+    const price = Number(sale.price || 0);
+    if (target.gold < price) return `${card.name}を使ったが${target.name}のゴールドが足りなかった`;
+    target.gold -= price;
+    owner.gold = Math.min(99, owner.gold + price);
+    removeCardFromHand(owner, sale.uid);
+    target.hand.push(sale);
+    return `${sale.name}を${target.name}へ￥${price}で売った`;
+  }
+  if (card.effect === "buy") {
+    const offer = target.hand[Math.floor(Math.random() * target.hand.length)];
+    if (!offer) return `${card.name}を使ったが買える神器がなかった`;
+    const price = Number(offer.price || 0);
+    if (owner.gold < price) return `${offer.name}を提示されたがゴールドが足りなかった`;
+    owner.gold -= price;
+    target.gold = Math.min(99, target.gold + price);
+    removeCardFromHand(target, offer.uid);
+    owner.hand.push(offer);
+    return `${offer.name}を${target.name}から￥${price}で買った`;
+  }
+  if (card.effect === "discard") {
+    const discardTarget = (card.sourceName || card.name) === "イタズラマン" ? owner : target;
+    let count = 0;
+    for (let i = 0; i < Math.max(1, Number(card.effectPower || 1)) && discardTarget.hand.length; i++) {
+      const selected = discardTarget.hand[Math.floor(Math.random() * discardTarget.hand.length)];
+      if (discardCard(game, discardTarget, selected)) count += 1;
+    }
+    return `${card.name}で${discardTarget.name}の神器を${count}枚消した`;
+  }
+  if (card.effect === "forget_magic") {
+    const count = Math.min(target.learnedMagics.length, Math.max(1, Number(card.effectPower || 1)));
+    for (let i = 0; i < count; i++) {
+      target.learnedMagics.splice(Math.floor(Math.random() * target.learnedMagics.length), 1);
+    }
+    return `${card.name}で${target.name}の奇跡を${count}個忘れさせた`;
+  }
   if (["heal_hp", "heal"].includes(card.effect)) {
     healPlayer(game, owner, Number(card.effectPower || card.heal || 0));
     return `${card.name}でHPを回復した`;
   }
   if (card.effect === "heal_mp") {
     owner.mp = Math.min(owner.maxMp, owner.mp + Number(card.effectPower || 0));
+    if (card.statusEffect && card.statusEffect !== "none") applyStatusEffect(game, owner, card.statusEffect);
     return `${card.name}でMPを回復した`;
+  }
+  if (card.effect === "cure_status") {
+    owner.statuses = card.statusEffect === "all"
+      ? []
+      : owner.statuses.filter(status => !(card.cureStatuses || []).includes(status));
+    return `${card.name}で災いを消した`;
+  }
+  if (card.effect === "boost_attack") {
+    owner.attackBoost += Number(card.effectPower || 0);
+    return `${card.name}で次の攻撃を強化した`;
+  }
+  if (card.effect === "mp_free_magic") {
+    owner.freeMagicUses += 1;
+    return `${card.name}で次の奇跡のMP消費を0にした`;
+  }
+  if (card.effect === "random_heal_damage") {
+    if (Math.random() < 0.5) healPlayer(game, owner, Number(card.effectPower || 10));
+    else damagePlayer(game, owner, Number(card.effectPower || 10));
+    return `${card.name}を自分に使った`;
+  }
+  if (card.effect === "self_damage") {
+    damagePlayer(game, owner, Number(card.effectPower || 0));
+    return `${card.name}で自分にダメージを与えた`;
+  }
+  if (card.effect === "random_event") {
+    if (card.target === "all_players") triggerSupernaturalEvent(game, owner);
+    else {
+      const resource = ["hp", "mp", "gold"][Math.floor(Math.random() * 3)];
+      owner[resource] = Math.min(99, owner[resource] + Number(card.effectPower || 10));
+    }
+    return `${card.name}を使った`;
   }
   if (card.effect === "summon_guardian") {
     summonRandomGuardian(game, owner);
     return `${card.name}で守護神を交代した`;
+  }
+  if (["revive", "custom"].includes(card.effect)) {
+    owner.hand.push(card);
+    return `${card.name}を手札に加えた`;
   }
   owner.hand.push(card);
   return `${card.name}を手札に加えた`;
@@ -150,6 +238,10 @@ function runMoonMagic(game, owner, target, guardian) {
     });
   } else if (magic.effect === "inflict_status") {
     if (Math.random() <= Number(magic.effectChance ?? 100) / 100) applyStatusEffect(game, target, magic.statusEffect);
+  } else if (magic.effect === "cure_status") {
+    owner.statuses = magic.statusEffect === "all"
+      ? []
+      : owner.statuses.filter(status => !(magic.cureStatuses || []).includes(status));
   } else if (magic.effect === "heal_hp") {
     healPlayer(game, owner, Number(magic.effectPower || magic.heal || 0));
   } else if (magic.effect === "gold_gain") {
