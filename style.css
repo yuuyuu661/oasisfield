@@ -928,6 +928,17 @@ button:disabled {
   font-size: 12px;
 }
 
+.battle-effect {
+  min-width: 0;
+  overflow: hidden;
+  color: #a33a17;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mini-card {
   background: rgba(255,255,255,.5);
   border-radius: 10px;
@@ -1938,29 +1949,30 @@ button:disabled {
 }
 
 .combat-card-list:not(.empty) > .battle-card {
-  flex: 0 0 52px;
+  flex: 0 0 60px;
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: 1px 6px;
   width: 100%;
   max-width: none;
-  height: 52px;
-  min-height: 52px;
+  height: 60px;
+  min-height: 60px;
   padding: 3px;
   text-align: left;
 }
 
 .combat-card-list:not(.empty) > .battle-card .battle-art {
   grid-column: 1;
-  grid-row: 1 / 3;
+  grid-row: 1 / 4;
   width: 42px;
   height: 42px;
   align-self: center;
 }
 
 .combat-card-list:not(.empty) > .battle-card strong,
-.combat-card-list:not(.empty) > .battle-card span {
+.combat-card-list:not(.empty) > .battle-card span,
+.combat-card-list:not(.empty) > .battle-card .battle-effect {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2013,12 +2025,12 @@ button:disabled {
   }
 
   .combat-card-list:not(.empty) > .battle-card {
-    flex-basis: 44px;
+    flex-basis: 52px;
     grid-template-columns: 36px minmax(0, 1fr);
     width: 100%;
     max-width: none;
-    height: 44px;
-    min-height: 44px;
+    height: 52px;
+    min-height: 52px;
     padding: 2px;
     gap: 0 4px;
   }
@@ -2029,7 +2041,8 @@ button:disabled {
   }
 
   .combat-card-list:not(.empty) > .battle-card strong,
-  .combat-card-list:not(.empty) > .battle-card span {
+  .combat-card-list:not(.empty) > .battle-card span,
+  .combat-card-list:not(.empty) > .battle-card .battle-effect {
     font-size: 9px;
   }
 }

@@ -240,8 +240,11 @@ function renderPhase() {
     els.phaseBadge.textContent = `${getActor(game).name}のターン`;
     els.battleMessage.textContent = `「${game.selectedAttackCard.name}」で攻撃する相手のステータスバーをタップしてください。`;
   } else if (game.phase === "utility_target") {
-    els.phaseBadge.textContent = "アイテムの対象選択";
-    els.battleMessage.textContent = "アイテムを使う相手のステータスバーをタップしてください。";
+    const selected = selectedUtilityCard(game);
+    const typeLabel = selected?.type === "magic" ? "魔法" : "アイテム";
+    const targetLabel = selected?.type === "magic" && selected.target === "self" ? "自分" : "使用先";
+    els.phaseBadge.textContent = `${typeLabel}の対象選択`;
+    els.battleMessage.textContent = `${targetLabel}のステータスバーをタップして「${selected?.name || typeLabel}」を発動してください。`;
   } else if (game.phase === "sell_card") {
     els.phaseBadge.textContent = "売却カード選択";
     els.battleMessage.textContent = "売りたいカードを手札から選んでください。";
@@ -276,14 +279,20 @@ function renderPhase() {
 
   const canAttack = game.phase === "attack" && game.turn === "player" && !game.winner && !game.busy;
   const canDefense = game.phase === "defense" && game.defenderId === "player" && !game.winner && !game.busy;
-  const needsTarget = ["target", "utility_target", "sell_target", "buy_target"].includes(game.phase) && !game.busy;
-  const canTargetSelf = game.phase === "utility_target" && !game.busy;
+  const selectedUtility = selectedUtilityCard(game);
+  const needsEnemyTarget = !game.busy && (
+    ["target", "sell_target", "buy_target"].includes(game.phase)
+    || (game.phase === "utility_target" && utilityTargetIsAllowed(game, selectedUtility, "enemy"))
+  );
+  const canTargetSelf = game.phase === "utility_target"
+    && !game.busy
+    && utilityTargetIsAllowed(game, selectedUtility, "player");
   const canPray = canAttack && !playerHasWeapon(game.player);
 
   els.prayBtn.disabled = !canPray;
-  els.enemyPanel.classList.toggle("target-highlight", needsTarget);
+  els.enemyPanel.classList.toggle("target-highlight", needsEnemyTarget);
   els.playerPanel.classList.toggle("target-highlight", canTargetSelf || canDefense);
-  setStatusBarTargetState(els.enemyPanel, needsTarget);
+  setStatusBarTargetState(els.enemyPanel, needsEnemyTarget);
   setStatusBarTargetState(els.playerPanel, canTargetSelf || canDefense);
   setDefenseConfirmState(canDefense);
   els.hitResult.classList.toggle("hidden", !game.hitResult);
@@ -396,7 +405,7 @@ function renderArena() {
   els.arenaAttackerName.textContent = game[battle.attackerId].name;
   els.arenaDefenderName.textContent = game[battle.defenderId].name;
   const attackCards = battle.attackCards?.length ? battle.attackCards : [battle.attackCard];
-  els.arenaAttackCard.className = attackCards.length > 1 ? "combat-card-list" : "combat-card single-card";
+  els.arenaAttackCard.className = "combat-card-list";
   els.arenaAttackCard.style.setProperty("--card-count", attackCards.length);
   els.arenaAttackCard.innerHTML = attackCards.map(card => bigCardHtml(card)).join("");
 
@@ -405,7 +414,7 @@ function renderArena() {
     els.arenaDefenseCards.style.setProperty("--card-count", 1);
     els.arenaDefenseCards.textContent = "防御カードなし";
   } else {
-    els.arenaDefenseCards.className = battle.defenseCards.length > 1 ? "combat-card-list" : "combat-card single-card";
+    els.arenaDefenseCards.className = "combat-card-list";
     els.arenaDefenseCards.style.setProperty("--card-count", battle.defenseCards.length);
     els.arenaDefenseCards.innerHTML = battle.defenseCards.map(card => bigCardHtml(card)).join("");
   }
@@ -529,7 +538,10 @@ function renderLearnedMagics() {
   if (els.learnedMagicCount) els.learnedMagicCount.textContent = `${magics.length} / 6`;
   if (!els.learnedMagicList) return;
   els.learnedMagicList.innerHTML = "";
-  const usable = game.phase === "attack" && game.turn === "player" && !game.winner && !game.busy;
+  const usable = ["attack", "utility_target"].includes(game.phase)
+    && game.turn === "player"
+    && !game.winner
+    && !game.busy;
   magics.forEach(card => {
     const button = document.createElement("button");
     button.type = "button";
@@ -542,8 +554,7 @@ function renderLearnedMagics() {
     });
     button.addEventListener("click", () => {
       game.focusedCard = card;
-      const targetId = card.target === "self" ? game.attackerId : opponentId(game.attackerId);
-      useUtilityAndEndTurn(game, card.uid, targetId);
+      selectMagicForTarget(game, card);
       renderGame();
     });
     els.learnedMagicList.appendChild(button);
@@ -719,6 +730,7 @@ function cardHtml(card) {
 
 function bigCardHtml(card) {
   if (!card) return "";
+  const effect = battleEffectText(card);
   return `
     <div class="battle-card">
       <div class="battle-art">${cardImageHtml(card)}</div>
@@ -727,8 +739,32 @@ function bigCardHtml(card) {
         <span class="full-card-stat">${statText(card)}</span>
         <span class="mobile-card-stat">${shortStatText(card)}</span>
       </span>
+      ${effect ? `<small class="battle-effect">${effect}</small>` : ""}
     </div>
   `;
+}
+
+function battleEffectText(card) {
+  const status = card.statusEffect && card.statusEffect !== "none"
+    ? (STATUS_EFFECTS[card.statusEffect] || card.statusEffect)
+    : "";
+  if (status && (card.attack > 0 || ["inflict_status", "all_attack"].includes(card.effect))) {
+    return `ダメージで${status}付与`;
+  }
+  if (card.effect === "multi_hit") return `${card.hitCount || 2}回攻撃`;
+  if (card.effect === "hp_drain") return "与ダメージ分HP吸収";
+  if (card.effect === "self_damage") return "自分にも同ダメージ";
+  if (card.effect === "random_target") return "生存者へランダム攻撃";
+  if (card.effect === "reflect_normal") {
+    return reflectionModeForCard(card) === "bounce" ? "無属性攻撃を弾く" : "無属性攻撃を反射";
+  }
+  if (card.effect === "reflect_magic" || card.secondaryEffect === "reflect_magic") {
+    return reflectionModeForCard(card) === "bounce" ? "魔法を弾く" : "魔法を反射";
+  }
+  if (card.effect === "nullify_magic" || card.secondaryEffect === "nullify_magic") return "魔法を止める";
+  if (card.effect === "add_attack") return "武器に追加";
+  if (card.isAllAttack || card.target === "all_enemies" || card.effect === "all_attack") return "敵全体を攻撃";
+  return "";
 }
 
 function miniCardHtml(card, mode) {

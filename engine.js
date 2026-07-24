@@ -306,17 +306,43 @@ function selectAttackCard(game, uid) {
   }
 
   if (card.type === "magic") {
-    game.selectedAttackUid = null;
-    game.selectedAttackCard = null;
-    game.selectedAttackEnhancementUids = [];
-    game.selectedUtilityUid = null;
-    game.phase = "attack";
-    const targetId = card.target === "self" ? game.attackerId : opponentId(game.attackerId);
-    useUtilityAndEndTurn(game, uid, targetId);
+    selectMagicForTarget(game, card);
     return;
   }
 
   game.logs.unshift("防具は防御時に使います。追加攻撃カードは武器と組み合わせて使えます。");
+}
+
+function selectMagicForTarget(game, card) {
+  if (!card || card.type !== "magic" || game.busy || game.winner || game.turn !== "player") return false;
+  if (game.phase === "utility_target" && game.selectedUtilityUid === card.uid) {
+    cancelSelection(game);
+    return true;
+  }
+  game.selectedAttackUid = null;
+  game.selectedAttackCard = null;
+  game.selectedAttackEnhancementUids = [];
+  game.selectedUtilityUid = card.uid;
+  game.focusedCard = card;
+  game.phase = "utility_target";
+  const targetText = card.target === "self" ? "自分" : "相手";
+  game.logs.unshift(`「${card.name}」を選択しました。${targetText}のステータスバーをタップして発動してください。`);
+  return true;
+}
+
+function selectedUtilityCard(game) {
+  const actor = getActor(game);
+  return actor.hand.find(card => card.uid === game.selectedUtilityUid)
+    || actor.learnedMagics.find(card => card.uid === game.selectedUtilityUid)
+    || null;
+}
+
+function utilityTargetIsAllowed(game, card, targetId) {
+  if (!card || !["player", "enemy"].includes(targetId)) return false;
+  if (card.type !== "magic") return true;
+  return card.target === "self"
+    ? targetId === game.attackerId
+    : targetId !== game.attackerId;
 }
 
 function cancelSelection(game) {
@@ -339,7 +365,16 @@ function chooseActionTarget(game, targetId) {
     }
     return startAttack(game, game.selectedAttackUid, targetId);
   }
-  if (game.phase === "utility_target") return useUtilityAndEndTurn(game, game.selectedUtilityUid, targetId);
+  if (game.phase === "utility_target") {
+    const card = selectedUtilityCard(game);
+    if (!utilityTargetIsAllowed(game, card, targetId)) {
+      game.logs.unshift(card?.target === "self"
+        ? "この魔法は自分に使用してください。"
+        : "この魔法は相手に使用してください。");
+      return false;
+    }
+    return useUtilityAndEndTurn(game, game.selectedUtilityUid, targetId);
+  }
   if (game.phase === "sell_target") return completeSale(game, targetId);
   if (game.phase === "buy_target") return preparePurchaseOffer(game, targetId);
   return false;
