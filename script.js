@@ -578,8 +578,8 @@ function renderDetail() {
     <h2>${card.name}</h2>
     <div class="detail-effect">${cardEffectLabel(card.type, card.effect)}</div>
     <div class="detail-stats">
-      ${card.attack ? `<span>攻撃 ${card.attack}</span>` : ""}
-      ${card.defense ? `<span>防御 ${card.defense}</span>` : ""}
+      ${card.attack ? elementStatHtml(`攻撃 ${card.attack}`, card) : ""}
+      ${card.defense ? elementStatHtml(`防御 ${card.defense}`, card) : ""}
       ${isHealingCard(card) ? `<span>回復 ${card.heal || card.effectPower || 0}</span>` : ""}
       ${card.type === "magic" ? `<span>MP消費 ${card.mpCost || 0}</span>` : ""}
       <span>価格 ￥${card.price || 0}</span>
@@ -813,30 +813,54 @@ function elementBadgeHtml(element, showLabel = false) {
   return `<span class="element-badge element-${element}${showLabel ? " element-badge-labeled" : ""}" title="${info.label}属性" aria-label="${info.label}属性"><b aria-hidden="true">${info.symbol}</b>${showLabel ? `<em>${info.label}属性</em>` : ""}</span>`;
 }
 
+function elementStatHtml(text, card) {
+  const info = elementInfo(card.element);
+  return info
+    ? `<span class="element-stat element-${card.element}">${text}</span>`
+    : `<span>${text}</span>`;
+}
+
 function statWithElement(text, card) {
-  return `${text}${elementBadgeHtml(card.element, false)}`;
+  const info = elementInfo(card.element);
+  const stat = info
+    ? `<span class="element-stat element-${card.element}">${text}</span>`
+    : text;
+  return `${stat}${elementBadgeHtml(card.element, false)}`;
 }
 
 function statText(card) {
-  const chance = (card.effectChance ?? 100) < 100 ? ` / 命中${card.effectChance}%` : "";
-  if (isAdditionalAttackCard(card)) return statWithElement(`追加攻撃 +${card.attack || 0}${chance}`, card);
-  if (card.type === "weapon") return statWithElement(`攻撃 ${card.attack || 0}${card.effect === "multi_hit" ? `×${card.hitCount || 2}` : ""}${chance}`, card);
+  const chance = (card.effectChance ?? 100) < 100 ? `${card.effectChance}％で` : "";
+  if (isAdditionalAttackCard(card)) {
+    const text = chance ? `${chance}追加攻${card.attack || 0}` : `追加攻撃 +${card.attack || 0}`;
+    return statWithElement(text, card);
+  }
+  if (card.type === "weapon") {
+    const hits = card.effect === "multi_hit" ? `×${card.hitCount || 2}` : "";
+    const text = chance ? `${chance}攻${card.attack || 0}${hits}` : `攻撃 ${card.attack || 0}${hits}`;
+    return statWithElement(text, card);
+  }
   if (isDefenseCard(card)) return statWithElement(`防御 ${card.defense || 0}`, card);
   if (isHealingCard(card)) return statWithElement(`回復 ${card.heal || card.effectPower || 0}`, card);
-  if (card.type === "magic") return statWithElement(`MP ${card.mpCost || 0}${chance}`, card);
+  if (card.type === "magic") {
+    const power = card.attack || card.effectPower || 0;
+    return statWithElement(chance && power ? `${chance}攻${power}` : `MP ${card.mpCost || 0}`, card);
+  }
   return statWithElement(`￥${card.price || 0}`, card);
 }
 
 function shortStatText(card) {
-  const chance = (card.effectChance ?? 100) < 100 ? `${card.effectChance}%` : "";
-  if (isAdditionalAttackCard(card)) return statWithElement(`${chance}+攻${card.attack || 0}`, card);
+  const chance = (card.effectChance ?? 100) < 100 ? `${card.effectChance}％で` : "";
+  if (isAdditionalAttackCard(card)) return statWithElement(`${chance}${chance ? "追加攻" : "+攻"}${card.attack || 0}`, card);
   if (card.type === "weapon") {
     const hits = card.effect === "multi_hit" ? `×${card.hitCount || 2}` : "";
     return statWithElement(`${chance}攻${card.attack || 0}${hits}`, card);
   }
   if (isDefenseCard(card)) return statWithElement(`守${card.defense || 0}`, card);
   if (isHealingCard(card)) return statWithElement(`回${card.heal || card.effectPower || 0}`, card);
-  if (card.type === "magic") return statWithElement(`${chance}MP${card.mpCost || 0}`, card);
+  if (card.type === "magic") {
+    const power = card.attack || card.effectPower || 0;
+    return statWithElement(chance && power ? `${chance}攻${power}` : `MP${card.mpCost || 0}`, card);
+  }
   return statWithElement(`￥${card.price || 0}`, card);
 }
 

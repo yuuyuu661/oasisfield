@@ -889,6 +889,18 @@ button:disabled {
 .element-badge.element-light { color: #d69e00; }
 .element-badge.element-dark { color: #7c3aed; }
 
+.element-stat {
+  color: inherit;
+}
+
+.element-stat.element-fire { color: #dc2626; }
+.element-stat.element-water { color: #2563eb; }
+.element-stat.element-wood,
+.element-stat.element-wind { color: #16a34a; }
+.element-stat.element-earth { color: #a16207; }
+.element-stat.element-light { color: #d69e00; }
+.element-stat.element-dark { color: #7c3aed; }
+
 .detail-stats > .element-badge {
   width: 34px;
   height: 34px;
