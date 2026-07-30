@@ -45,6 +45,60 @@ class OasisFieldRulesTest(unittest.TestCase):
         self.assertTrue(all(len(player["hand"]) == 9 for player in self.game["players"]))
         self.assertEqual(self.game["pot"], 0)
 
+    def test_all_end_time_limits_are_preserved(self):
+        for limit in sorted(rules.END_LIMITS):
+            game = rules.new_game(
+                f"TEST-{limit}",
+                "GUILD",
+                0,
+                "1",
+                [
+                    {"user_id": "1", "user_name": "A"},
+                    {"user_id": "2", "user_name": "B"},
+                ],
+                limit,
+            )
+            self.assertEqual(game["end_time_limit"], limit)
+
+    def test_normal_armor_is_defense_only_but_attack_armor_is_allowed(self):
+        actor = self.make_actor()
+        armor = card("革の帽子")
+        actor["hand"] = [armor]
+        with self.assertRaisesRegex(rules.OasisRuleError, "攻撃を受けた時"):
+            rules.apply_action(
+                self.game,
+                actor["user_id"],
+                {
+                    "action": "play",
+                    "card_uid": armor["uid"],
+                    "target_id": actor["user_id"],
+                },
+            )
+        self.assertEqual(self.game["phase"], "turn")
+        self.assertEqual(actor["hand"][0]["uid"], armor["uid"])
+
+        attack_armor = card("鬼のくつ")
+        actor["hand"] = [attack_armor]
+        with self.assertRaisesRegex(rules.OasisRuleError, "武器がない時"):
+            rules.apply_action(
+                self.game,
+                actor["user_id"],
+                {"action": "pray"},
+            )
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {
+                "action": "play",
+                "card_uid": attack_armor["uid"],
+                "target_id": "2",
+            },
+        )
+        self.assertEqual(
+            self.game["pending_attack"]["primary"]["effect"],
+            "attack_defense",
+        )
+
     def test_support_magic_and_spirit_order(self):
         actor = self.make_actor()
         actor["hand"] = [card("銅のこん棒"), card("＜オーラ＞"), card("精霊のぬいぐるみ")]

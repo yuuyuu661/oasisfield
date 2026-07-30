@@ -30,6 +30,12 @@ assert.equal(evaluate('defenseElementCanBlock("fire", "water")'), true);
 assert.equal(evaluate('defenseElementCanBlock("light", "water")'), false);
 assert.equal(evaluate('defenseElementCanBlock("dark", "none")'), true);
 assert.equal(evaluate('attackCardAllowsEnhancements({ effect: "all_attack" })'), false);
+assert.equal(
+  evaluate(`playerHasWeapon({
+    hand: [{ type: "armor", effect: "attack_defense" }]
+  })`),
+  true
+);
 assert.equal(evaluate(`(() => {
   const game = {
     pendingAttack: { hit: true, isMagic: true, attack: 5, element: "fire", card: { element: "fire" } },

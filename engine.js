@@ -255,7 +255,10 @@ function removeCardFromHand(player, uid) {
 }
 
 function playerHasWeapon(player) {
-  return player.hand.some(card => card.type === "weapon" && !isAdditionalAttackCard(card));
+  return player.hand.some(card =>
+    (card.type === "weapon" && !isAdditionalAttackCard(card))
+    || card.effect === "attack_defense"
+  );
 }
 
 function selectAttackCard(game, uid) {

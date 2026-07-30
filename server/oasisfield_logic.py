@@ -817,6 +817,10 @@ def _use_utility(
     original = _card(actor, card_uid)
     if not original:
         raise OasisRuleError("そのカードはありません")
+    if original["type"] == "armor" and original.get("effect") != "attack_defense":
+        raise OasisRuleError("防具は攻撃を受けた時だけ使用できます")
+    if original["type"] == "enchantment" or original.get("catalogGroup") == "additional_weapon":
+        raise OasisRuleError("エンチャントは単体武器と同時に使用してください")
     if original.get("effect") in SPECIAL_EFFECTS:
         game["pending_trade"] = {"card_uid": card_uid, "effect": original["effect"]}
         game["phase"] = f'trade_{original["effect"]}'
@@ -1500,7 +1504,10 @@ def apply_action(game: dict[str, Any], user_id: str, payload: dict[str, Any]) ->
             _use_utility(game, actor, uid, payload.get("target_id"), supports)
         return
     if action == "pray":
-        if any(card["type"] == "weapon" for card in actor["hand"]):
+        if any(
+            card["type"] == "weapon" or card.get("effect") == "attack_defense"
+            for card in actor["hand"]
+        ):
             raise OasisRuleError("武器がない時だけ祈れます")
         _draw(game, actor)
         game["logs"].insert(0, f'{actor["user_name"]}が祈り、カードを1枚授かりました。')
