@@ -362,27 +362,28 @@ function currentBattle() {
   }
 
   if (game.selectedAttackCard) {
+    const supportMagics = selectedAttackSupportCards(game);
+    const enhancementCards = game.selectedAttackEnhancementUids
+      .map(uid => getActor(game).hand.find(card => card.uid === uid))
+      .filter(Boolean);
+    const auraCount = supportMagics.filter(card => card.effect === "double_attack").length;
     return {
       attackerId: game.attackerId,
       defenderId: game.turn === "player" ? "enemy" : "player",
       attackCard: game.selectedAttackCard,
       attackCards: [
         game.selectedAttackCard,
-        ...game.selectedAttackEnhancementUids
-          .map(uid => getActor(game).hand.find(card => card.uid === uid))
-          .filter(Boolean)
+        ...enhancementCards,
+        ...supportMagics
       ],
       element: combineAttackElements([
         game.selectedAttackCard,
-        ...game.selectedAttackEnhancementUids
-          .map(uid => getActor(game).hand.find(card => card.uid === uid))
-          .filter(Boolean)
+        ...enhancementCards
       ]),
       defenseCards: [],
-      attack: (game.selectedAttackCard.attack || 0) + game.selectedAttackEnhancementUids
-        .map(uid => getActor(game).hand.find(card => card.uid === uid))
-        .filter(Boolean)
-        .reduce((sum, card) => sum + Number(card.attack || 0), 0),
+      attack: ((game.selectedAttackCard.attack || 0)
+        + enhancementCards.reduce((sum, card) => sum + Number(card.attack || 0), 0))
+        * Math.pow(2, auraCount),
       defense: 0,
       damage: null
     };
@@ -511,6 +512,7 @@ function renderHand() {
     const selected = game.player.selectedDefense.includes(card.uid)
       || game.selectedAttackUid === card.uid
       || game.selectedAttackEnhancementUids.includes(card.uid)
+      || (game.selectedAttackMagicUids || []).includes(card.uid)
       || game.selectedUtilityUid === card.uid;
 
     const cardEl = document.createElement("div");
@@ -547,14 +549,15 @@ function renderLearnedMagics() {
   if (els.learnedMagicCount) els.learnedMagicCount.textContent = `${magics.length} / 6`;
   if (!els.learnedMagicList) return;
   els.learnedMagicList.innerHTML = "";
-  const usable = ["attack", "utility_target"].includes(game.phase)
+  const usable = ["attack", "target", "utility_target"].includes(game.phase)
     && game.turn === "player"
     && !game.winner
     && !game.busy;
   magics.forEach(card => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `learned-magic ${usable && game.player.mp >= (game.player.freeMagicUses ? 0 : card.mpCost || 0) ? "" : "disabled"}`;
+    const selected = (game.selectedAttackMagicUids || []).includes(card.uid);
+    button.className = `learned-magic ${selected ? "selected" : ""} ${usable && game.player.mp >= (game.player.freeMagicUses ? 0 : card.mpCost || 0) ? "" : "disabled"}`;
     button.disabled = !usable || game.player.mp < (game.player.freeMagicUses ? 0 : card.mpCost || 0);
     button.innerHTML = `${cardImageHtml(card)}<span>${card.name}</span><b>MP ${game.player.freeMagicUses ? 0 : card.mpCost || 0}</b>`;
     button.addEventListener("mouseenter", () => {
@@ -563,7 +566,8 @@ function renderLearnedMagics() {
     });
     button.addEventListener("click", () => {
       game.focusedCard = card;
-      selectMagicForTarget(game, card);
+      if (isAttackSupportMagic(card)) toggleAttackSupportMagic(game, card);
+      else selectMagicForTarget(game, card);
       renderGame();
     });
     els.learnedMagicList.appendChild(button);

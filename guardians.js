@@ -86,8 +86,17 @@ function resolveGuardianAttack(game, owner, target, guardian, action) {
     drawCard(game, target);
   });
   const damage = Math.max(0, Number(action.attack || 0) - defense);
-  damagePlayer(game, target, damage);
-  if (damage > 0 && resolvedElement === "dark") target.hp = 0;
+  if (damage > 0 && resolvedElement === "dark") {
+    target.hp = 0;
+    if (target.guardian && Math.random() < 0.1) {
+      const guardianName = target.guardian.name;
+      target.guardian = null;
+      game.logs.unshift(`${target.name}の${guardianName}は、ダメージに驚いて去りました。`);
+    }
+    triggerSunCharm(game, target);
+  } else {
+    damagePlayer(game, target, damage);
+  }
   if (damage > 0 && action.status) applyStatusEffect(game, target, action.status);
   if (damage > 0 && action.drain) {
     owner.hp = Math.min(owner.hpCap || 99, owner.hp + damage);
@@ -139,13 +148,12 @@ function runWorldArtifact(game, owner, target, guardian) {
     const sale = owner.hand[Math.floor(Math.random() * owner.hand.length)];
     if (!sale) return `${card.name}を使ったが売る神器がなかった`;
     const price = Number(sale.price || 0);
-    if (target.gold < price) return `${card.name}を使ったが${target.name}のゴールドが足りなかった`;
-    target.gold -= price;
+    const payment = paySalePrice(target, price);
     owner.gold = Math.min(99, owner.gold + price);
     removeCardFromHand(owner, sale.uid);
     target.hand.push(sale);
     sortHand(target);
-    return `${sale.name}を${target.name}へ￥${price}で売った`;
+    return `${sale.name}を${target.name}へ￥${price}で売った（支払い：${salePaymentText(payment)}）`;
   }
   if (card.effect === "buy") {
     const offer = target.hand[Math.floor(Math.random() * target.hand.length)];

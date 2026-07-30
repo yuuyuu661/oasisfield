@@ -101,9 +101,9 @@ function weapon(name, attack, options = {}) {
   return catalogCard(name, "weapon", { attack, catalogGroup: "single_weapon", ...options });
 }
 
-function allWeapon(name, attack, chance, defense, options = {}) {
+function allWeapon(name, attack, chance, price, options = {}) {
   return catalogCard(name, "weapon", {
-    attack, defense, effect: "all_attack", effectChance: chance, isAllAttack: true,
+    attack, price, effect: "all_attack", effectChance: chance, isAllAttack: true,
     target: "all_enemies", catalogGroup: "all_weapon", ...options
   });
 }
@@ -185,7 +185,8 @@ const OASIS_ALL_WEAPONS = [
   allWeapon("霧の扇", 3, 50, 8, { element: "water", statusEffect: "fog" }), allWeapon("冷気杯", 4, 75, 6, { element: "water" }),
   allWeapon("特大雪玉", 5, 50, 5, { element: "water" }), allWeapon("雨神刀", 9, 50, 9, { element: "water" }),
   allWeapon("つるシュート", 3, 75, 10, { element: "wood", effect: "hp_drain" }),
-  allWeapon("植物杯", 4, 75, 6, { element: "wood" }), allWeapon("魔神の木馬", 8, 75, 6, { element: "wood" }),
+  allWeapon("植物杯", 4, 75, 6, { element: "wood" }),
+  allWeapon("魔神の木馬", 8, 75, 15, { defense: 6, element: "wood" }),
   allWeapon("岩石杯", 4, 75, 6, { element: "earth" }), allWeapon("ガケッツチ", 6, 25, 4, { element: "earth" }),
   allWeapon("プチサターン", 20, 25, 15, { element: "earth" }), allWeapon("イナヅマキッズ", 3, 25, 2, { element: "light" }),
   allWeapon("光のオーブ", 6, 75, 10, { element: "light" }),
@@ -488,7 +489,7 @@ const OASIS_SPECIAL_DESCRIPTIONS = {
   "天国草": "対象のMPを20回復し、天国病を与える。",
   "あぶないウス": "あぶないキネの効果発動時に99ダメージ。捨てても手元に戻り、1ダメージを受ける。",
   "両替": "自分のHP・MP・ゴールドの合計値を、好きな配分に振り分ける。HP1＝MP1＝￥1。",
-  "売る": "自分の手札を1枚選び、価格分のゴールドを持つ相手へ売る。支払い後にカードを相手へ渡す。",
+  "売る": "自分の手札を1枚選び、相手へ売る。代金は相手のゴールド、不足分はMP、さらに不足する分はHPから支払われ、支払い後にカードを相手へ渡す。",
   "買う": "相手の手札を無作為に1枚提示し、価格分のゴールドがあれば購入するか選べる。",
   "イタズラマン": "使用者の手札または起こした奇跡から無作為に2つ消す。",
   "めぐみの妖精": "使用者のHP・MP・ゴールドのいずれかをランダムに10増やす。"
@@ -557,7 +558,8 @@ OASIS_CATALOG_CARDS.forEach(card => {
     : Math.max(1, Math.min(30, card.type === "magic"
       ? card.mpCost || 1
       : Math.ceil(Math.max(card.attack || 0, card.defense || 0, card.effectPower || 0, 1) / 2)));
-  card.price = OASIS_PRICE_OVERRIDES[card.sourceName] ?? (card.price > 0 ? card.price : fallbackPrice);
+  card.price = OASIS_PRICE_OVERRIDES[card.sourceName]
+    ?? (card.type === "magic" ? 0 : (card.price > 0 ? card.price : fallbackPrice));
   card.drawRate = OASIS_RATE_OVERRIDES[card.sourceName] ?? card.drawRate ?? 0.2;
   card.desc = card.desc || catalogDescription(card);
 });

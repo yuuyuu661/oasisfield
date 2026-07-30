@@ -97,6 +97,10 @@ function isPassiveHandCard(card) {
   return card?.effect === "revive";
 }
 
+function isAttackSupportMagic(card) {
+  return card?.type === "magic" && ["double_attack", "sure_all_attack"].includes(card.effect);
+}
+
 function triggerSunCharm(game, player) {
   if (player.hp > 0) return false;
   const charm = player.hand.find(card => (card.sourceName || card.name) === "太陽のお守り");
@@ -107,7 +111,7 @@ function triggerSunCharm(game, player) {
   return true;
 }
 
-function damagePlayer(game, player, amount, { allowGuardianDeparture = true } = {}) {
+function damagePlayer(game, player, amount, { allowGuardianDeparture = true, deferRevive = false } = {}) {
   const damage = Math.max(0, Number(amount || 0));
   if (damage <= 0) return 0;
   player.hp = Math.max(0, player.hp - damage);
@@ -116,7 +120,7 @@ function damagePlayer(game, player, amount, { allowGuardianDeparture = true } = 
     player.guardian = null;
     game.logs.unshift(`${player.name}の${guardianName}は、ダメージに驚いて去りました。`);
   }
-  triggerSunCharm(game, player);
+  if (!deferRevive) triggerSunCharm(game, player);
   return damage;
 }
 
@@ -137,15 +141,17 @@ function discardCard(game, player, card) {
 }
 
 function createGame() {
+  const firstTurn = Math.random() < 0.5 ? "player" : "enemy";
   const game = {
     phase: "attack",
-    turn: "player",
-    attackerId: "player",
-    defenderId: "enemy",
+    turn: firstTurn,
+    attackerId: firstTurn,
+    defenderId: opponentId(firstTurn),
     logs: [],
     selectedAttackUid: null,
     selectedAttackCard: null,
     selectedAttackEnhancementUids: [],
+    selectedAttackMagicUids: [],
     selectedUtilityUid: null,
     focusedCard: null,
     pendingAttack: null,
@@ -162,6 +168,14 @@ function createGame() {
   drawCards(game, game.player, HAND_SIZE);
   drawCards(game, game.enemy, HAND_SIZE);
   game.logs.unshift("おあしすフィールド開始。HP40・MP10・￥20・初期手札9枚です。");
+  game.logs.unshift(`${getActor(game).name}が先攻です。`);
+  if (getActor(game).isCpu) {
+    game.busy = true;
+    setTimeout(() => {
+      cpuTakeAttackAction(game);
+      renderNow();
+    }, CPU_DELAY);
+  }
   return game;
 }
 
@@ -293,7 +307,10 @@ function selectAttackCard(game, uid) {
         ...new Set([...game.selectedAttackEnhancementUids, standaloneEnhancementUid])
       ];
     }
-    if (!allowsEnhancements) game.selectedAttackEnhancementUids = [];
+    if (!allowsEnhancements) {
+      game.selectedAttackEnhancementUids = [];
+      game.selectedAttackMagicUids = [];
+    }
     game.phase = "target";
     game.logs.unshift(allowsEnhancements
       ? `「${card.name}」を選択。追加攻撃カードを重ねるか、攻撃対象を選んでください。`
@@ -305,6 +322,7 @@ function selectAttackCard(game, uid) {
     game.selectedAttackUid = null;
     game.selectedAttackCard = null;
     game.selectedAttackEnhancementUids = [];
+    game.selectedAttackMagicUids = [];
     if (["sell", "buy", "exchange"].includes(card.effect)) {
       game.phase = "attack";
       beginTrade(game, uid);
@@ -320,6 +338,10 @@ function selectAttackCard(game, uid) {
   }
 
   if (card.type === "magic") {
+    if (isAttackSupportMagic(card)) {
+      toggleAttackSupportMagic(game, card);
+      return;
+    }
     selectMagicForTarget(game, card);
     return;
   }
@@ -327,8 +349,54 @@ function selectAttackCard(game, uid) {
   game.logs.unshift("防具は防御時に使います。追加攻撃カードは武器と組み合わせて使えます。");
 }
 
+function selectedAttackSupportCards(game) {
+  const actor = getActor(game);
+  return (game.selectedAttackMagicUids || [])
+    .map(uid => actor.hand.find(card => card.uid === uid)
+      || actor.learnedMagics.find(card => card.uid === uid))
+    .filter(isAttackSupportMagic);
+}
+
+function attackSupportMpCost(actor, cards) {
+  const freeCount = Number(actor.freeMagicUses || 0)
+    + actor.hand.filter(card => card.effect === "mp_free_magic" && card.type !== "item").length;
+  return cards.reduce((sum, card, index) => sum + (index < freeCount ? 0 : Number(card.mpCost || 0)), 0);
+}
+
+function toggleAttackSupportMagic(game, card) {
+  if (!card || !isAttackSupportMagic(card) || game.busy || game.winner || game.turn !== "player") return false;
+  if (!["attack", "target", "utility_target"].includes(game.phase)) return false;
+  if (game.selectedAttackCard && !attackCardAllowsEnhancements(game.selectedAttackCard)) {
+    game.logs.unshift("全体攻撃カードに＜オーラ＞や＜蜃気楼＞は重ねられません。");
+    return false;
+  }
+  const actor = getActor(game);
+  const selected = new Set(game.selectedAttackMagicUids || []);
+  if (selected.has(card.uid)) {
+    selected.delete(card.uid);
+  } else {
+    selected.add(card.uid);
+    const cards = [...selected]
+      .map(uid => actor.hand.find(candidate => candidate.uid === uid)
+        || actor.learnedMagics.find(candidate => candidate.uid === uid))
+      .filter(Boolean);
+    if (attackSupportMpCost(actor, cards) > actor.mp) {
+      game.logs.unshift("選択した奇跡を同時に使うためのMPが足りません。");
+      return false;
+    }
+  }
+  game.selectedAttackMagicUids = [...selected];
+  game.selectedUtilityUid = null;
+  game.phase = game.selectedAttackUid ? "target" : "attack";
+  game.logs.unshift(selected.has(card.uid)
+    ? `「${card.name}」を武器と同時に使います。`
+    : `「${card.name}」の同時使用を解除しました。`);
+  return true;
+}
+
 function selectMagicForTarget(game, card) {
   if (!card || card.type !== "magic" || game.busy || game.winner || game.turn !== "player") return false;
+  if (isAttackSupportMagic(card)) return toggleAttackSupportMagic(game, card);
   if (game.phase === "utility_target" && game.selectedUtilityUid === card.uid) {
     cancelSelection(game);
     return true;
@@ -336,6 +404,7 @@ function selectMagicForTarget(game, card) {
   game.selectedAttackUid = null;
   game.selectedAttackCard = null;
   game.selectedAttackEnhancementUids = [];
+  game.selectedAttackMagicUids = [];
   game.selectedUtilityUid = card.uid;
   game.focusedCard = card;
   game.phase = "utility_target";
@@ -366,12 +435,45 @@ function cancelSelection(game) {
   game.selectedAttackUid = null;
   game.selectedAttackCard = null;
   game.selectedAttackEnhancementUids = [];
+  game.selectedAttackMagicUids = [];
   game.selectedUtilityUid = null;
   game.pendingTrade = null;
   game.phase = "attack";
   game.focusedCard = actor.hand.find(card => card.uid === selectedCardUid) || game.focusedCard;
   game.logs.unshift("選択を解除しました。");
   return true;
+}
+
+function consumeAttackSupportMagics(game, actor) {
+  const cards = selectedAttackSupportCards(game);
+  const freeEquipment = actor.hand.filter(card => card.effect === "mp_free_magic" && card.type !== "item");
+  let freeUses = Number(actor.freeMagicUses || 0);
+  let drawCount = 0;
+  const usedCards = [];
+
+  cards.forEach(card => {
+    let cost = Number(card.mpCost || 0);
+    if (freeUses > 0) {
+      freeUses -= 1;
+      cost = 0;
+    } else if (freeEquipment.length > 0) {
+      const equipment = freeEquipment.shift();
+      removeCardFromHand(actor, equipment.uid);
+      drawCount += 1;
+      cost = 0;
+      game.logs.unshift(`${actor.name}は${equipment.name}を重ね、MPを消費せず奇跡を起こしました。`);
+    }
+    actor.mp -= cost;
+    const handCard = actor.hand.find(candidate => candidate.uid === card.uid);
+    if (handCard) {
+      removeCardFromHand(actor, card.uid);
+      learnMagic(game, actor, handCard);
+    }
+    usedCards.push(card);
+    drawCount += 1;
+  });
+  actor.freeMagicUses = freeUses;
+  return { cards: usedCards, drawCount };
 }
 
 function chooseActionTarget(game, targetId) {
@@ -491,6 +593,9 @@ function startAttack(game, uid, defenderId) {
       ? isAdditionalAttackCard(card)
       : card.type === "weapon" || card.effect === "attack_defense"
   );
+  const attackSupport = attackCardAllowsEnhancements(used)
+    ? consumeAttackSupportMagics(game, attacker)
+    : { cards: [], drawCount: 0 };
   const selectedEnhancementUids = attackCardAllowsEnhancements(used)
     ? game.selectedAttackEnhancementUids
     : [];
@@ -498,7 +603,7 @@ function startAttack(game, uid, defenderId) {
     .map(selectedUid => removeCardFromHand(attacker, selectedUid))
     .filter(card => isAdditionalAttackCard(card))
     .map(card => dreamTransformCard(game, attacker, card, candidate => isAdditionalAttackCard(candidate)));
-  playUsedCardSounds([used, ...enhancementCards]);
+  playUsedCardSounds([used, ...enhancementCards, ...attackSupport.cards]);
 
   let dangerousMortarTriggered = false;
   if ((used.sourceName || used.name) === "あぶないキネ") {
@@ -516,16 +621,21 @@ function startAttack(game, uid, defenderId) {
   const defender = game[defenderId];
   const additionalAttack = enhancementCards.reduce((sum, card) => sum + Number(card.attack || 0), 0);
   const attackElement = combineAttackElements([used, ...enhancementCards]);
-  let attackValue = ((used.attack || 0) + additionalAttack + (attacker.attackBoost || 0)) * (attacker.attackMultiplier || 1);
+  const auraCount = attackSupport.cards.filter(card => card.effect === "double_attack").length;
+  const mirageCount = attackSupport.cards.filter(card => card.effect === "sure_all_attack").length;
+  let attackValue = ((used.attack || 0) + additionalAttack + (attacker.attackBoost || 0))
+    * (attacker.attackMultiplier || 1)
+    * Math.pow(2, auraCount);
   if (dangerousMortarTriggered) attackValue = 99;
   if (used.effect === "mp_scaled_attack") {
     attackValue = attacker.mp * (used.effectPower || 2);
     attacker.mp = 0;
   }
-  const hitCount = used.effect === "multi_hit" ? Math.max(2, used.hitCount || 2) : 1;
+  const baseHitCount = used.effect === "multi_hit" ? Math.max(2, used.hitCount || 2) : 1;
+  const hitCount = Math.max(baseHitCount, mirageCount || 1);
   attacker.attackBoost = 0;
 
-  const hit = dangerousMortarTriggered || defenderId === game.attackerId || attacker.forceNextHit
+  const hit = dangerousMortarTriggered || defenderId === game.attackerId || attacker.forceNextHit || mirageCount > 0
     ? true
     : rollAttackHit(used, defender);
   const wallBlocked = defender.magicBarrier === "wall" && attackElement === "none";
@@ -534,12 +644,14 @@ function startAttack(game, uid, defenderId) {
   game.pendingAttack = {
     card: used,
     enhancementCards,
+    supportMagicCards: attackSupport.cards,
+    supportDrawCount: attackSupport.drawCount,
     element: attackElement,
     attack: attackValue,
     hitCount,
     hit: hit && !wallBlocked,
     nullified: wallBlocked,
-    allAttack: Boolean(attacker.forceNextHit || used.isAllAttack || used.target === "all_enemies"),
+    allAttack: Boolean(attacker.forceNextHit || mirageCount > 0 || used.isAllAttack || used.target === "all_enemies"),
     attackerId: game.attackerId,
     defenderId
   };
@@ -547,7 +659,7 @@ function startAttack(game, uid, defenderId) {
     attackerId: game.attackerId,
     defenderId,
     attackCard: used,
-    attackCards: [used, ...enhancementCards],
+    attackCards: [used, ...enhancementCards, ...attackSupport.cards],
     element: attackElement,
     defenseCards: [],
     attack: attackValue,
@@ -561,6 +673,7 @@ function startAttack(game, uid, defenderId) {
   game.selectedAttackUid = null;
   game.selectedAttackCard = null;
   game.selectedAttackEnhancementUids = [];
+  game.selectedAttackMagicUids = [];
   attacker.attackMultiplier = 1;
   attacker.forceNextHit = false;
   defender.selectedDefense = [];
@@ -803,14 +916,19 @@ function triggerSupernaturalEvent(game, actor) {
     {
       name: "磁気嵐",
       run() {
-        const counts = players.map(player => player.hand.length);
-        const mixedCards = shuffle(players.flatMap(player => player.hand));
+        const counts = players.map(player => player.hand.length + player.learnedMagics.length);
+        const mixedCards = shuffle(players.flatMap(player => [
+          ...player.hand,
+          ...player.learnedMagics.map(card => ({ ...card, uid: makeUid() }))
+        ]));
         let offset = 0;
         players.forEach((player, index) => {
           player.hand = mixedCards.slice(offset, offset + counts[index]);
+          player.learnedMagics = [];
+          sortHand(player);
           offset += counts[index];
         });
-        return "全員の手札が無作為に入れ替わった";
+        return "覚えた奇跡を含む全カードが未使用へ戻り、全員の手札が無作為に入れ替わった";
       }
     },
     {
@@ -835,6 +953,10 @@ function useUtilityAndEndTurn(game, uid, targetId) {
   const learnedMagic = actor.learnedMagics.find(card => card.uid === uid);
   const original = actor.hand.find(card => card.uid === uid) || learnedMagic;
   if (!original) return false;
+  if (isAttackSupportMagic(original)) {
+    game.logs.unshift(`「${original.name}」は単体武器と同時に選んで使用してください。`);
+    return false;
+  }
   if (isPassiveHandCard(original)) {
     game.logs.unshift(`「${original.name}」はHPが0になった時に自動発動します。`);
     return false;
@@ -1061,7 +1183,7 @@ function useUtilityAndEndTurn(game, uid, targetId) {
   drawCards(game, actor, 1);
   checkWinner(game);
   game.logs.unshift(`${used.name}: ${resultText}。`);
-  if (!game.winner) passTurn(game);
+  if (!game.winner && !game.pendingAttack) passTurn(game);
   return true;
 }
 
@@ -1112,7 +1234,7 @@ function finishTradeUse(game, actor, tradeCardUid, message) {
   game.selectedUtilityUid = null;
   game.logs.unshift(message);
   checkWinner(game);
-  if (!game.winner) passTurn(game);
+  if (!game.winner && !game.pendingAttack) passTurn(game);
 }
 
 function paySalePrice(buyer, price) {
@@ -1267,8 +1389,17 @@ function prayAndEndTurn(game, player) {
     game.logs.unshift("手札に武器があるため祈れません。");
     return;
   }
-  drawCard(game, player);
-  game.logs.unshift(`${player.name}は祈ってカードを1枚授かりました。`);
+  if (player.hand.length >= MAX_HAND_SIZE) {
+    const discardable = player.hand.filter(card => (card.sourceName || card.name) !== "あぶないウス");
+    const discarded = discardable[Math.floor(Math.random() * discardable.length)];
+    if (discarded && discardCard(game, player, discarded)) {
+      game.logs.unshift(`手札が${MAX_HAND_SIZE}枚だったため、祈りで「${discarded.name}」を無作為に捨てました。`);
+    }
+  }
+  const received = drawCard(game, player);
+  game.logs.unshift(received
+    ? `${player.name}は祈って「${received.name}」を1枚授かりました。`
+    : `${player.name}は祈りましたが、手札を増やせませんでした。`);
   passTurn(game);
 }
 
@@ -1364,7 +1495,7 @@ function resolvePendingAttack(game) {
 
   playUsedCardSounds(defenseCards);
   defenseCards.forEach(card => removeCardFromHand(defender, card.uid));
-  damagePlayer(game, defender, damage);
+  damagePlayer(game, defender, damage, { deferRevive: true });
   applyDefenseReactions(game, defenseCards, attacker, defender, damage);
 
   if (reflector) {
@@ -1376,7 +1507,7 @@ function resolvePendingAttack(game) {
     const drawCounts = { ...(pending.drawCounts || {}) };
     if (!pending.drawCounts) {
       drawCounts[pending.attackerId] = (drawCounts[pending.attackerId] || 0)
-        + 1 + (pending.enhancementCards?.length || 0);
+        + 1 + (pending.enhancementCards?.length || 0) + Number(pending.supportDrawCount || 0);
     }
     drawCounts[pending.defenderId] = (drawCounts[pending.defenderId] || 0) + defenseCards.length;
 
@@ -1399,7 +1530,7 @@ function resolvePendingAttack(game) {
       attackerId: pending.defenderId,
       defenderId: reflectedTargetId,
       attackCard: pending.card,
-      attackCards: [pending.card, ...(pending.enhancementCards || [])],
+      attackCards: [pending.card, ...(pending.enhancementCards || []), ...(pending.supportMagicCards || [])],
       element: resolvedElement,
       defenseCards: [],
       attack: pending.attack,
@@ -1415,6 +1546,13 @@ function resolvePendingAttack(game) {
     game.phase = "defense";
     game.busy = false;
     renderNow();
+
+    if (reflectedTargetId === pending.defenderId) {
+      game.phase = "resolving";
+      game.busy = true;
+      setTimeout(() => resolvePendingAttack(game), RESOLVE_DELAY);
+      return;
+    }
 
     if (reflectedTarget.isCpu) {
       game.busy = true;
@@ -1445,12 +1583,13 @@ function resolvePendingAttack(game) {
   const effectOwner = game[pending.effectOwnerId || pending.attackerId];
   if (damage > 0 && pending.card.effect === "hp_drain") healPlayer(game, effectOwner, damage);
   if (pending.card.effect === "self_damage") damagePlayer(game, effectOwner, damage);
+  triggerSunCharm(game, defender);
 
   game.lastBattle = {
     attackerId: pending.attackerId,
     defenderId: pending.defenderId,
     attackCard: pending.card,
-    attackCards: [pending.card, ...(pending.enhancementCards || [])],
+    attackCards: [pending.card, ...(pending.enhancementCards || []), ...(pending.supportMagicCards || [])],
     element: resolvedElement,
     originalElement: pending.element || pending.card.element || "none",
     defenseCards,
@@ -1484,10 +1623,16 @@ function resolvePendingAttack(game) {
       drawCards(game, game[playerId], count);
     });
   } else {
-    drawCards(game, attacker, 1 + (pending.enhancementCards?.length || 0));
+    if (!pending.skipDraw) {
+      drawCards(game, attacker, 1 + (pending.enhancementCards?.length || 0) + Number(pending.supportDrawCount || 0));
+    }
     drawCards(game, defender, defenseCards.length);
   }
   checkWinner(game);
+  if (game.pendingAttack) {
+    renderNow();
+    return;
+  }
   renderNow();
   setTimeout(() => {
     game.busy = false;
@@ -1521,6 +1666,7 @@ function passTurn(game) {
   game.selectedAttackUid = null;
   game.selectedAttackCard = null;
   game.selectedAttackEnhancementUids = [];
+  game.selectedAttackMagicUids = [];
   game.selectedUtilityUid = null;
   game.pendingTrade = null;
   game.hitResult = null;
@@ -1581,25 +1727,72 @@ function processEndOfTurnStatuses(game, player) {
   game.logs.unshift(`${player.name}の災いが${STATUS_EFFECTS[worsened]}へ悪化しました。`);
 }
 
+function beginAscensionBowAttack(game, playerId, bow) {
+  const defenderId = opponentId(playerId);
+  const defender = game[defenderId];
+  removeCardFromHand(game[playerId], bow.uid);
+  const chance = Number(bow.ascensionHitChance || 75);
+  const attack = Number(bow.ascensionAttack || 30);
+  const hit = Math.random() * 100 < chance;
+  game.logs.unshift(`${game[playerId].name}の昇天弓が昇天時に自動発動${hit ? "しました。" : "しましたが、外れました。"}`);
+  if (!hit || defender.hp <= 0) return false;
+
+  const attackCard = {
+    ...bow,
+    attack,
+    effectChance: chance,
+    element: bow.element || "light",
+    effect: "all_attack",
+    isAllAttack: true
+  };
+  game.attackerId = playerId;
+  game.defenderId = defenderId;
+  game.pendingAttack = {
+    card: attackCard,
+    enhancementCards: [],
+    element: attackCard.element,
+    attack,
+    hitCount: 1,
+    hit: true,
+    allAttack: true,
+    attackerId: playerId,
+    defenderId,
+    skipDraw: true
+  };
+  game.lastBattle = {
+    attackerId: playerId,
+    defenderId,
+    attackCard,
+    attackCards: [attackCard],
+    element: attackCard.element,
+    defenseCards: [],
+    attack,
+    defense: 0,
+    damage: "🎯 昇天弓が命中"
+  };
+  defender.selectedDefense = [];
+  game.phase = "defense";
+  game.busy = false;
+  renderNow();
+  if (defender.isCpu) {
+    game.busy = true;
+    setTimeout(() => {
+      cpuChooseDefense(game);
+      renderNow();
+      setTimeout(() => resolvePendingAttack(game), RESOLVE_DELAY);
+    }, CPU_DELAY);
+  }
+  return true;
+}
+
 function checkWinner(game) {
-  [game.player, game.enemy].forEach((player, index) => {
-    triggerSunCharm(game, player);
-    if (player.hp <= 0) {
-      const bow = player.hand.find(card => (card.sourceName || card.name) === "昇天弓");
-      if (bow) {
-        removeCardFromHand(player, bow.uid);
-        const opponent = index === 0 ? game.enemy : game.player;
-        const chance = Number(bow.ascensionHitChance || 75);
-        const attack = Number(bow.ascensionAttack || 30);
-        if (Math.random() * 100 < chance) {
-          damagePlayer(game, opponent, attack);
-          game.logs.unshift(`${player.name}の昇天弓が昇天時に自動発動し、${opponent.name}に${attack}ダメージを与えました。`);
-        } else {
-          game.logs.unshift(`${player.name}の昇天弓が昇天時に自動発動しましたが、外れました。`);
-        }
-      }
-    }
-  });
+  [game.player, game.enemy].forEach(player => triggerSunCharm(game, player));
+  for (const playerId of ["player", "enemy"]) {
+    const player = game[playerId];
+    if (player.hp > 0) continue;
+    const bow = player.hand.find(card => (card.sourceName || card.name) === "昇天弓");
+    if (bow && beginAscensionBowAttack(game, playerId, bow)) return;
+  }
   if (game.player.hp <= 0 && game.enemy.hp <= 0) {
     game.winner = "draw";
     game.phase = "ended";

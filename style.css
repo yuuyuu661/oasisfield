@@ -775,6 +775,11 @@ button:disabled {
 
 .learned-magic b { font-size: 11px; }
 .learned-magic.disabled { opacity: .45; }
+.learned-magic.selected {
+  border-color: #ffb000;
+  background: #fff3b8;
+  box-shadow: 0 0 0 3px rgba(255, 176, 0, .28);
+}
 
 .hand-card {
   width: 100%;

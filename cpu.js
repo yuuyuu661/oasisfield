@@ -22,7 +22,10 @@ function cpuTakeAttackAction(game) {
 
   if (weapons.length === 0) {
     const learned = [...(cpu.learnedMagics || [])]
-      .filter(card => cpu.mp >= (cpu.freeMagicUses ? 0 : Number(card.mpCost || 0)))
+      .filter(card =>
+        !isAttackSupportMagic(card)
+        && cpu.mp >= (cpu.freeMagicUses ? 0 : Number(card.mpCost || 0))
+      )
       .sort((a, b) => Number(b.attack || b.effectPower || b.heal || 0) - Number(a.attack || a.effectPower || a.heal || 0))[0];
     if (learned) {
       game.busy = false;
@@ -44,7 +47,9 @@ function cpuTakeAttackAction(game) {
       return;
     }
     const utility = cpu.hand.find(card =>
-      (card.type === "item" || card.type === "magic") && !isPassiveHandCard(card)
+      (card.type === "item" || card.type === "magic")
+      && !isPassiveHandCard(card)
+      && !isAttackSupportMagic(card)
     );
     if (utility) {
       game.busy = false;
@@ -63,14 +68,33 @@ function cpuTakeAttackAction(game) {
   const enhancements = attackCardAllowsEnhancements(chosen)
     ? cpu.hand.filter(card => isAdditionalAttackCard(card))
     : [];
+  const supportMagics = attackCardAllowsEnhancements(chosen)
+    ? [...cpu.hand, ...(cpu.learnedMagics || [])]
+      .filter(isAttackSupportMagic)
+      .sort((left, right) => Number(left.mpCost || 0) - Number(right.mpCost || 0))
+    : [];
+  let remainingMp = cpu.mp;
+  const selectedSupportMagics = [];
+  supportMagics.forEach(card => {
+    const cost = Number(card.mpCost || 0);
+    if (cost <= remainingMp) {
+      selectedSupportMagics.push(card.uid);
+      remainingMp -= cost;
+    }
+  });
 
   game.busy = false;
   game.selectedAttackUid = chosen.uid;
   game.selectedAttackCard = chosen;
   game.selectedAttackEnhancementUids = enhancements.map(card => card.uid);
+  game.selectedAttackMagicUids = selectedSupportMagics;
   game.focusedCard = chosen;
   game.phase = "target";
-  game.logs.unshift(`CPUは「${chosen.name}」${enhancements.length ? `と追加攻撃${enhancements.length}枚` : ""}を選択しました。`);
+  game.logs.unshift(
+    `CPUは「${chosen.name}」`
+    + `${enhancements.length ? `と追加攻撃${enhancements.length}枚` : ""}`
+    + `${selectedSupportMagics.length ? `と補助奇跡${selectedSupportMagics.length}枚` : ""}を選択しました。`
+  );
   window.renderGame();
 
   setTimeout(() => {
