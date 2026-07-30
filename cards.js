@@ -223,7 +223,7 @@ function isDefenseCard(card) {
     card.type === "armor" ||
     card.type === "enchant" ||
     Number(card.defense || 0) > 0 ||
-    ["reflect_normal", "reflect_magic", "nullify_magic"].includes(card.effect) ||
+    ["reflect_normal", "reflect_magic", "nullify_magic", "wall_defense"].includes(card.effect) ||
     ["reflect_magic", "nullify_magic"].includes(card.secondaryEffect)
   ) && !isAdditionalAttackCard(card);
 }

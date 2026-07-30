@@ -498,23 +498,35 @@ function renderHand() {
       || !game.selectedAttackCard
       || isAdditionalAttackCard(game.selectedAttackCard)
       || attackCardAllowsEnhancements(game.selectedAttackCard);
+    const usableAsSpiritSupport = canChooseTurnCards
+      && isSpiritSupportCard(card)
+      && Boolean(
+        game.selectedAttackCard
+        || (game.selectedAttackMagicUids || []).length
+        || selectedUtilityCard(game)?.type === "magic"
+      );
     const usableAsAttack = !isPassiveHandCard(card) && (
       (
         canChooseTurnCards
         && canAddToSelectedAttack
         && (card.type === "weapon" || card.effect === "attack_defense" || isAdditionalAttackCard(card))
       ) || (
-        canChooseTurnCards && (card.type === "item" || card.type === "magic")
+        canChooseTurnCards && (
+          card.type === "item"
+          || (card.type === "magic" && !isReactiveMagic(card))
+        )
       )
     );
 
     const usableAsDefense = canDefense && canUseDefenseCard(game, card);
     const usableAsSale = isSelectingSale && card.uid !== game.pendingTrade?.tradeCardUid;
-    const usable = usableAsAttack || usableAsDefense || usableAsSale;
+    const usable = usableAsAttack || usableAsSpiritSupport || usableAsDefense || usableAsSale;
     const selected = game.player.selectedDefense.includes(card.uid)
       || game.selectedAttackUid === card.uid
       || game.selectedAttackEnhancementUids.includes(card.uid)
       || (game.selectedAttackMagicUids || []).includes(card.uid)
+      || (game.selectedAttackSupportUids || []).includes(card.uid)
+      || game.selectedUtilitySpiritUid === card.uid
       || game.selectedUtilityUid === card.uid;
 
     const cardEl = document.createElement("div");
@@ -535,6 +547,7 @@ function renderHand() {
       }
 
       if (usableAsSale) selectSellCard(game, card.uid);
+      else if (usableAsSpiritSupport && card.type !== "weapon") toggleSpiritSupportCard(game, card);
       else if (usableAsAttack) selectAttackCard(game, card.uid);
       else if (usableAsDefense) toggleDefenseCard(game, card.uid);
 
@@ -551,14 +564,22 @@ function renderLearnedMagics() {
   if (els.learnedMagicCount) els.learnedMagicCount.textContent = `${magics.length} / 6`;
   if (!els.learnedMagicList) return;
   els.learnedMagicList.innerHTML = "";
-  const usable = ["attack", "target", "utility_target"].includes(game.phase)
+  const usableOnTurn = ["attack", "target", "utility_target"].includes(game.phase)
     && game.turn === "player"
+    && !game.winner
+    && !game.busy;
+  const usableOnDefense = game.phase === "defense"
+    && game.defenderId === "player"
     && !game.winner
     && !game.busy;
   magics.forEach(card => {
     const button = document.createElement("button");
     button.type = "button";
-    const selected = (game.selectedAttackMagicUids || []).includes(card.uid);
+    const selected = (game.selectedAttackMagicUids || []).includes(card.uid)
+      || game.player.selectedDefense.includes(card.uid);
+    const defensive = usableOnDefense && canUseDefenseCard(game, card);
+    const offensive = usableOnTurn && !isReactiveMagic(card);
+    const usable = defensive || offensive;
     button.className = `learned-magic ${selected ? "selected" : ""} ${usable && game.player.mp >= (game.player.freeMagicUses ? 0 : card.mpCost || 0) ? "" : "disabled"}`;
     button.disabled = !usable || game.player.mp < (game.player.freeMagicUses ? 0 : card.mpCost || 0);
     button.innerHTML = `${cardImageHtml(card)}<span>${card.name}</span><b>MP ${game.player.freeMagicUses ? 0 : card.mpCost || 0}</b>`;
@@ -568,7 +589,8 @@ function renderLearnedMagics() {
     });
     button.addEventListener("click", () => {
       game.focusedCard = card;
-      if (isAttackSupportMagic(card)) toggleAttackSupportMagic(game, card);
+      if (defensive) toggleDefenseCard(game, card.uid);
+      else if (isAttackSupportMagic(card)) toggleAttackSupportMagic(game, card);
       else selectMagicForTarget(game, card);
       renderGame();
     });

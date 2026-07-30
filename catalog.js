@@ -240,7 +240,7 @@ const OASIS_ARMORS = [
 ];
 
 const OASIS_MAGICS = [
-  magic("＜火の玉＞", 2, { attack: 2, effect: "magic_attack", element: "fire" }),
+  magic("＜火の玉＞", 2, { attack: 2, effect: "add_magic_attack", element: "fire", target: "self" }),
   magic("＜煙＞", 4, { attack: 5, effectPower: 5, effectChance: 75, effect: "magic_all_attack", element: "fire", target: "all_enemies" }),
   magic("＜炎＞", 5, { attack: 10, effectPower: 10, effect: "magic_attack", element: "fire" }),
   magic("＜マグマ＞", 10, { attack: 15, effectPower: 15, effectChance: 75, effect: "magic_all_attack", element: "fire", target: "all_enemies" }),
@@ -251,9 +251,9 @@ const OASIS_MAGICS = [
   magic("＜大木＞", 3, { attack: 6, effectPower: 6, effect: "magic_attack", element: "wood" }),
   magic("＜岩＞", 4, { attack: 8, effectPower: 8, effect: "magic_attack", element: "earth" }),
   magic("＜土石流＞", 6, { attack: 12, effectPower: 12, effectChance: 50, effect: "magic_all_attack", element: "earth", target: "all_enemies" }),
-  magic("＜閃光＞", 3, { attack: 1, effectPower: 1, effectChance: 25, effect: "inflict_status", statusEffect: "flash", element: "light" }),
+  magic("＜閃光＞", 3, { attack: 1, effectPower: 1, effectChance: 25, effect: "inflict_status", statusEffect: "flash", element: "light", target: "all_enemies", isAllAttack: true }),
   magic("＜雷＞", 4, { attack: 10, effectPower: 10, effectChance: 25, effect: "magic_all_attack", element: "light", target: "all_enemies" }),
-  magic("＜流星＞", 7, { attack: 10, effectPower: 10, effect: "magic_attack", element: "light" }),
+  magic("＜流星＞", 7, { attack: 10, effectPower: 10, effect: "add_magic_attack", element: "light", target: "self" }),
   magic("＜吸収＞", 10, { attack: 10, effectPower: 10, effect: "hp_drain", element: "light" }),
   magic("＜闇＞", 5, { attack: 5, effectPower: 5, effect: "magic_attack", element: "dark" }),
   magic("＜風＞", 6, { effect: "inflict_status", statusEffect: "cold" }),
@@ -266,7 +266,7 @@ const OASIS_MAGICS = [
   magic("＜オーラ＞", 6, { effect: "double_attack", target: "self" }),
   magic("＜蜃気楼＞", 5, { effect: "sure_all_attack", target: "self" }),
   magic("＜乱気流＞", 5, { effect: "reflect_magic", target: "self" }),
-  magic("＜壁＞", 6, { effect: "nullify_magic", target: "self" }),
+  magic("＜壁＞", 6, { effect: "wall_defense", target: "self" }),
   magic("＜泉＞", 7, { heal: 10, effectPower: 10, effect: "heal_hp", target: "self" }),
   magic("＜財宝＞", 5, { effectPower: 10, effect: "gold_gain", target: "self" }),
   magic("＜解放＞", 15, { effect: "summon_guardian", target: "self" })
@@ -529,12 +529,15 @@ function catalogDescription(card) {
     return `防御${card.defense}${attackText}。`;
   }
   if (card.type === "magic") {
+    if (card.effect === "add_magic_attack") return `MP${card.mpCost}。単体武器に追加攻撃+${card.attack || card.effectPower}として重ねる。`;
+    if (card.effect === "wall_defense") return `MP${card.mpCost}。防御時に無属性武器を完全に止める。`;
     if (["magic_attack", "magic_all_attack", "hp_drain"].includes(card.effect)) {
       const base = `MP${card.mpCost}。${chanceText}${card.effect === "magic_all_attack" ? "全体攻撃" : "攻撃"}${card.attack || card.effectPower}`;
       return `${base}${card.effect === "hp_drain" ? "。与えたダメージ分だけHPを回復する。" : "。"}`
     }
     if (card.effect === "inflict_status") {
-      const attack = card.attack ? `${chanceText}攻撃${card.attack}。命中した時、` : "";
+      const attackKind = card.isAllAttack || card.target === "all_enemies" ? "全体攻撃" : "攻撃";
+      const attack = card.attack ? `${chanceText}${attackKind}${card.attack}。命中した時、` : "";
       return `MP${card.mpCost}。${attack}対象に${oasisCatalogStatusLabel(card.statusEffect)}を与える。`;
     }
     if (card.effect === "cure_status") return `MP${card.mpCost}。${card.statusEffect === "all" ? "すべての災い" : "指定された災い"}を消す。`;

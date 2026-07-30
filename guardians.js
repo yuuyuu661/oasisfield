@@ -41,9 +41,12 @@ const OASIS_GUARDIANS = [
   ]}
 ];
 
-function summonRandomGuardian(game, player) {
+function summonRandomGuardian(game, player, { excludeCurrent = false } = {}) {
   const opponent = player === game.player ? game.enemy : game.player;
-  const candidates = OASIS_GUARDIANS.filter(guardian => guardian.id !== opponent.guardian?.id);
+  const candidates = OASIS_GUARDIANS.filter(guardian =>
+    guardian.id !== opponent.guardian?.id
+    && (!excludeCurrent || guardian.id !== player.guardian?.id)
+  );
   if (candidates.length === 0) return null;
   player.guardian = candidates[Math.floor(Math.random() * candidates.length)];
   game.logs.unshift(`${player.name}のもとに${player.guardian.name}が現れました。`);
@@ -251,7 +254,7 @@ function runWorldArtifact(game, owner, target, guardian) {
     return `${card.name}を使った`;
   }
   if (card.effect === "summon_guardian") {
-    summonRandomGuardian(game, owner);
+    summonRandomGuardian(game, owner, { excludeCurrent: true });
     return `${card.name}で守護神を交代した`;
   }
   if (["revive", "custom"].includes(card.effect)) {
@@ -277,7 +280,13 @@ function runMoonMagic(game, owner, target, guardian) {
       drain: magic.effect === "hp_drain"
     }, { isMagic: true, afterResolution: "advance_turn" });
   } else if (magic.effect === "inflict_status") {
-    if (Math.random() <= Number(magic.effectChance ?? 100) / 100) applyStatusEffect(game, target, magic.statusEffect);
+    resolveGuardianAttack(game, owner, target, guardian, {
+      name: magic.name,
+      attack: 0,
+      chance: magic.effectChance,
+      element: magic.element,
+      status: magic.statusEffect
+    }, { isMagic: true, afterResolution: "advance_turn" });
   } else if (magic.effect === "cure_status") {
     owner.statuses = magic.statusEffect === "all"
       ? []
@@ -314,6 +323,7 @@ function runGuardianAfterTurn(game, endingPlayer) {
     checkWinner(game);
     if (game.forcedSequence?.active) {
       game.forcedSequence.afterSequence = "advance_turn";
+      if (game.pendingAttack || game.pendingTrade?.guardianDecision) return true;
       continueForcedRandomActions(game);
       return true;
     }

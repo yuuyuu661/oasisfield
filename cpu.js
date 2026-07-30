@@ -113,7 +113,7 @@ function cpuChooseDefense(game) {
   if (!defender.isCpu) return;
 
   const attack = game.pendingAttack.attack;
-  const armors = defender.hand
+  const armors = [...defender.hand, ...(defender.learnedMagics || [])]
     .filter(card => canUseDefenseCard(game, card))
     .sort((a, b) => (a.defense || 0) - (b.defense || 0));
 
@@ -125,8 +125,19 @@ function cpuChooseDefense(game) {
       || (card.sourceName || card.name) === "スーパーミラー"
     );
     if (special) {
-      defender.selectedDefense = [special.uid];
-      game.logs.unshift(`CPUは${special.name}で奇跡に対抗します。`);
+      const cost = defenseMpCost(defender, [special]);
+      if (cost <= defender.mp) {
+        defender.selectedDefense = [special.uid];
+        game.logs.unshift(`CPUは${special.name}で奇跡に対抗します。`);
+        return;
+      }
+    }
+  }
+  if (!game.pendingAttack?.isMagic) {
+    const wall = armors.find(card => card.effect === "wall_defense");
+    if (wall && defenseMpCost(defender, [wall]) <= defender.mp) {
+      defender.selectedDefense = [wall.uid];
+      game.logs.unshift(`CPUは${wall.name}で無属性武器を止めます。`);
       return;
     }
   }

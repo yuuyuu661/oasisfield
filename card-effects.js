@@ -21,6 +21,7 @@ const CARD_EFFECTS = {
     ["nullify_magic", "魔法を止める"],
     ["random_target", "対象をランダム化"],
     ["mp_scaled_attack", "MP依存攻撃"],
+    ["mp_free_magic", "MP消費なしで奇跡を使用"],
     ["element_change", "攻撃属性を変更"]
   ],
   enchant: [
@@ -42,6 +43,7 @@ const CARD_EFFECTS = {
   armor: [
     ["defense", "防御"],
     ["attack_defense", "攻撃と防御"],
+    ["inflict_status", "使用者・攻撃者に災いを付与"],
     ["reflect_normal", "無属性攻撃を反射"],
     ["reflect_magic", "魔法を反射"],
     ["nullify_magic", "魔法を止める"],
@@ -69,6 +71,9 @@ const CARD_EFFECTS = {
     ["draw", "カードを引く"],
     ["double_attack", "次の単体武器を2倍"],
     ["sure_all_attack", "次の単体武器を必中全体化"],
+    ["add_magic_attack", "単体武器への追加攻撃"],
+    ["reflect_magic", "奇跡を弾く"],
+    ["wall_defense", "無属性武器を止める"],
     ["discard", "カードを捨てさせる"],
     ["revive", "復活"],
     ["random_effect", "ランダム効果"]
