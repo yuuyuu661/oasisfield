@@ -10,9 +10,10 @@ function cpuTakeAttackAction(game) {
 
     if (heal) {
       game.busy = false;
-      useHealAndEndTurn(game, heal.uid);
-      window.renderGame();
-      return;
+      if (useHealAndEndTurn(game, heal.uid)) {
+        window.renderGame();
+        return;
+      }
     }
   }
 
@@ -30,9 +31,10 @@ function cpuTakeAttackAction(game) {
     if (learned) {
       game.busy = false;
       const targetId = learned.target === "self" ? "enemy" : "player";
-      useUtilityAndEndTurn(game, learned.uid, targetId);
-      window.renderGame();
-      return;
+      if (useUtilityAndEndTurn(game, learned.uid, targetId)) {
+        window.renderGame();
+        return;
+      }
     }
     const additional = cpu.hand
       .filter(card => isAdditionalAttackCard(card))
@@ -53,9 +55,10 @@ function cpuTakeAttackAction(game) {
     );
     if (utility) {
       game.busy = false;
-      useUtilityAndEndTurn(game, utility.uid);
-      window.renderGame();
-      return;
+      if (useUtilityAndEndTurn(game, utility.uid)) {
+        window.renderGame();
+        return;
+      }
     }
     game.busy = false;
     drawCard(game, cpu);

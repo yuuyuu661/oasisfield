@@ -156,6 +156,7 @@ function createGame() {
     focusedCard: null,
     pendingAttack: null,
     pendingTrade: null,
+    forcedSequence: null,
     lastBattle: null,
     hitResult: null,
     dreamMasks: {},
@@ -569,6 +570,7 @@ function canUseDefenseCard(game, card) {
     if (card.effect === "reflect_normal") return false;
   }
   if (card.effect === "reflect_normal") {
+    if (game.pendingAttack.disallowNormalReflect) return false;
     return (card.sourceName || card.name) === "スーパーミラー" || attackElement === "none";
   }
   if (["reflect_magic", "nullify_magic"].includes(card.effect)) return false;
@@ -579,7 +581,7 @@ function canUseDefenseCard(game, card) {
   return false;
 }
 
-function startAttack(game, uid, defenderId) {
+function startAttack(game, uid, defenderId, { allowSelfDefense = false } = {}) {
   if (game.busy || game.winner || game.phase !== "target") return false;
   const attacker = getActor(game);
   const playedCard = removeCardFromHand(attacker, uid);
@@ -688,7 +690,7 @@ function startAttack(game, uid, defenderId) {
     return true;
   }
 
-  if (defenderId === game.attackerId) {
+  if (defenderId === game.attackerId && !allowSelfDefense) {
     game.phase = "resolving";
     game.busy = true;
     renderNow();
@@ -712,7 +714,7 @@ function startAttack(game, uid, defenderId) {
   return true;
 }
 
-function beginMagicAttack(game, card, attackerId, defenderId) {
+function beginMagicAttack(game, card, attackerId, defenderId, { allowSelfDefense = false } = {}) {
   const attacker = game[attackerId];
   const defender = game[defenderId];
   const hit = defenderId === attackerId ? true : rollAttackHit(card, defender);
@@ -749,7 +751,7 @@ function beginMagicAttack(game, card, attackerId, defenderId) {
   defender.selectedDefense = [];
   game.logs.unshift(`${attacker.name}の「${card.name}」は${hit ? "命中しました" : "外れました"}。`);
 
-  if (!hit || defenderId === attackerId) {
+  if (!hit || (defenderId === attackerId && !allowSelfDefense)) {
     game.phase = "resolving";
     game.busy = true;
     renderNow();
@@ -781,61 +783,186 @@ function replaceDiseaseWithFever(player) {
   player.statuses.push("fever");
 }
 
-function runForcedRandomActions(game, actionCount = 3) {
-  const players = [game.player, game.enemy];
-  for (let round = 0; round < actionCount; round++) {
-    for (const actor of players) {
-      if (actor.hp <= 0 || actor.hand.length === 0) continue;
-      const card = actor.hand[Math.floor(Math.random() * actor.hand.length)];
-      const isMortar = (card.sourceName || card.name) === "あぶないウス";
-      if (isMortar) {
-        damagePlayer(game, actor, 1);
-      } else {
-        removeCardFromHand(actor, card.uid);
-      }
-      const opponent = actor === game.player ? game.enemy : game.player;
-      const target = Math.random() < 0.5 ? actor : opponent;
-      const amount = Number(card.effectPower || card.heal || card.attack || 0);
-      let actionText = "効果なし";
-
-      if (card.type === "weapon" && !isAdditionalAttackCard(card)) {
-        const hit = rollAttackHit(card, target);
-        const damage = hit ? Math.max(0, Number(card.attack || 0)) * Math.max(1, Number(card.hitCount || 1)) : 0;
-        damagePlayer(game, target, damage);
-        actionText = hit ? `${target.name}に${damage}ダメージ` : "外れ";
-      } else if (card.type === "magic" && actor.mp >= Number(card.mpCost || 0)) {
-        actor.mp -= Number(card.mpCost || 0);
-        learnMagic(game, actor, card);
-        if (["magic_attack", "magic_all_attack", "hp_drain"].includes(card.effect)) {
-          const hit = rollAttackHit(card, target);
-          const damage = hit ? Math.max(0, amount) : 0;
-          damagePlayer(game, target, damage);
-          if (card.effect === "hp_drain") actor.hp = Math.min(actor.hpCap || 99, actor.hp + damage);
-          actionText = hit ? `${target.name}に${damage}ダメージ` : "外れ";
-        } else if (card.effect === "inflict_status") {
-          applyStatusEffect(game, target, card.statusEffect);
-          actionText = `${target.name}に${STATUS_EFFECTS[card.statusEffect] || "災い"}`;
-        } else if (card.effect === "heal_hp") {
-          target.hp = Math.min(target.hpCap || 99, target.hp + amount);
-          actionText = `${target.name}のHPを${amount}回復`;
-        }
-      } else if (card.type === "item") {
-        if (card.effect === "heal_hp" || card.effect === "heal") {
-          target.hp = Math.min(target.hpCap || 99, target.hp + amount);
-          actionText = `${target.name}のHPを${amount}回復`;
-        } else if (card.effect === "heal_mp") {
-          target.mp = Math.min(target.maxMp, target.mp + amount);
-          actionText = `${target.name}のMPを${amount}回復`;
-        } else if (card.effect === "self_damage") {
-          damagePlayer(game, actor, amount);
-          actionText = `${actor.name}に${amount}ダメージ`;
-        }
-      }
-
-      if (!isMortar) drawCard(game, actor);
-      game.logs.unshift(`キノコ大発生: ${actor.name}が「${card.name}」を勝手に使い、${actionText}。`);
+function forcedActionCards(player) {
+  return [...player.hand, ...(player.learnedMagics || [])].filter(card => {
+    if (isPassiveHandCard(card) || card.type === "armor") return false;
+    if (isAttackSupportMagic(card)) return false;
+    if (card.type === "magic") {
+      const freeMagic = player.freeMagicUses > 0
+        || player.hand.some(candidate => candidate.effect === "mp_free_magic" && candidate.type !== "item");
+      return freeMagic || player.mp >= Number(card.mpCost || 0);
     }
+    return card.type === "weapon" || card.type === "enchant" || card.type === "item";
+  });
+}
+
+function beginForcedRandomActions(game, actionCount = 3, { afterSequence = "pass_turn" } = {}) {
+  const queue = [];
+  for (let round = 0; round < actionCount; round++) queue.push("player", "enemy");
+  if (game.forcedSequence?.active) {
+    game.forcedSequence.queue.push(...queue);
+    game.logs.unshift(`キノコ大発生が重なり、勝手な行動がさらに${actionCount}回ずつ追加されました。`);
+    return;
   }
+  game.forcedSequence = {
+    active: true,
+    queue,
+    resumeTurn: game.turn,
+    resumeAttackerId: game.attackerId,
+    resumeDefenderId: game.defenderId,
+    afterSequence
+  };
+  game.logs.unshift("キノコ大発生により、全員が3回ずつ勝手に行動します。防御と「買う」の判断だけは通常どおり選べます。");
+}
+
+function randomExchangeValues(player) {
+  const total = player.hp + player.mp + player.gold;
+  const hp = Math.floor(Math.random() * (Math.min(99, total) + 1));
+  const remaining = total - hp;
+  const minMp = Math.max(0, remaining - 99);
+  const maxMp = Math.min(99, remaining);
+  const mp = minMp + Math.floor(Math.random() * (maxMp - minMp + 1));
+  return { hp, mp, gold: remaining - mp };
+}
+
+function randomForcedTargetId(game, actorId, card) {
+  if (card.target === "self") return actorId;
+  if (card.isAllAttack || card.target === "all_enemies" || ["all_attack", "magic_all_attack"].includes(card.effect)) {
+    return opponentId(actorId);
+  }
+  return randomLivingPlayerId(game);
+}
+
+function prepareForcedTrade(game, actorId, card) {
+  const actor = game[actorId];
+  const otherId = opponentId(actorId);
+  game.pendingTrade = { tradeCardUid: card.uid, effect: card.effect, forced: true };
+  game.selectedUtilityUid = card.uid;
+  if (card.effect === "exchange") {
+    const values = randomExchangeValues(actor);
+    game.phase = "exchange";
+    return confirmExchange(game, values.hp, values.mp, values.gold);
+  }
+  if (card.effect === "sell") {
+    const candidates = actor.hand.filter(candidate => candidate.uid !== card.uid);
+    if (!candidates.length) {
+      finishTradeUse(game, actor, card.uid, `キノコ大発生: ${actor.name}は売る品物がなく、「${card.name}」だけを使いました。`);
+      return true;
+    }
+    game.pendingTrade.saleCardUid = candidates[Math.floor(Math.random() * candidates.length)].uid;
+    game.phase = "sell_target";
+    return completeSale(game, otherId);
+  }
+  game.phase = "buy_target";
+  preparePurchaseOffer(game, otherId);
+  if (game.phase !== "buy_offer") return true;
+  if (actor.isCpu) confirmPurchase(game, Math.random() < 0.5);
+  return true;
+}
+
+function executeForcedRandomAction(game) {
+  if (!game.forcedSequence?.active || game.winner) return;
+  const actorId = game.forcedSequence.queue.shift();
+  if (!actorId) {
+    finishForcedRandomActions(game);
+    return;
+  }
+  const actor = game[actorId];
+  if (actor.hp <= 0) {
+    continueForcedRandomActions(game);
+    return;
+  }
+  game.turn = actorId;
+  game.attackerId = actorId;
+  game.defenderId = opponentId(actorId);
+  game.phase = "attack";
+  game.busy = false;
+  game.selectedAttackUid = null;
+  game.selectedAttackCard = null;
+  game.selectedAttackEnhancementUids = [];
+  game.selectedAttackMagicUids = [];
+  game.selectedUtilityUid = null;
+  game.pendingTrade = null;
+
+  const candidates = forcedActionCards(actor);
+  if (!candidates.length) {
+    const received = drawCard(game, actor);
+    game.logs.unshift(`キノコ大発生: ${actor.name}は使える神器がなく祈り、${received ? `「${received.name}」を授かりました` : "何も授かれませんでした"}。`);
+    checkWinner(game);
+    continueForcedRandomActions(game);
+    return;
+  }
+
+  const card = candidates[Math.floor(Math.random() * candidates.length)];
+  game.focusedCard = card;
+  game.logs.unshift(`キノコ大発生: ${actor.name}が「${card.name}」を勝手に選びました。`);
+  if (card.type === "weapon" || isAdditionalAttackCard(card) || card.effect === "attack_defense") {
+    const allowEnhancements = attackCardAllowsEnhancements(card);
+    game.selectedAttackUid = card.uid;
+    game.selectedAttackCard = card;
+    game.selectedAttackEnhancementUids = allowEnhancements
+      ? actor.hand
+        .filter(candidate => candidate.uid !== card.uid && isAdditionalAttackCard(candidate) && Math.random() < 0.5)
+        .map(candidate => candidate.uid)
+      : [];
+    if (allowEnhancements) {
+      let remainingMp = actor.mp;
+      game.selectedAttackMagicUids = [...actor.hand, ...(actor.learnedMagics || [])]
+        .filter(isAttackSupportMagic)
+        .filter(magic => {
+          const selected = Math.random() < 0.5 && Number(magic.mpCost || 0) <= remainingMp;
+          if (selected) remainingMp -= Number(magic.mpCost || 0);
+          return selected;
+        })
+        .map(magic => magic.uid);
+    }
+    const targetId = randomForcedTargetId(game, actorId, card);
+    game.phase = "target";
+    if (startAttack(game, card.uid, targetId, { allowSelfDefense: true }) && game.pendingAttack) {
+      game.pendingAttack.afterResolution = "mushroom_next";
+    }
+    return;
+  }
+
+  if (["sell", "buy", "exchange"].includes(card.effect)) {
+    prepareForcedTrade(game, actorId, card);
+    return;
+  }
+
+  const targetId = randomForcedTargetId(game, actorId, card);
+  game.phase = "utility_target";
+  game.selectedUtilityUid = card.uid;
+  const started = useUtilityAndEndTurn(game, card.uid, targetId);
+  if (started && game.pendingAttack) game.pendingAttack.afterResolution = "mushroom_next";
+}
+
+function continueForcedRandomActions(game) {
+  if (!game.forcedSequence?.active || game.winner) return;
+  game.phase = "resolving";
+  game.busy = true;
+  renderNow();
+  setTimeout(() => {
+    game.busy = false;
+    executeForcedRandomAction(game);
+    renderNow();
+  }, RESOLVE_DELAY);
+}
+
+function finishForcedRandomActions(game) {
+  const sequence = game.forcedSequence;
+  if (!sequence) return;
+  game.turn = sequence.resumeTurn;
+  game.attackerId = sequence.resumeAttackerId;
+  game.defenderId = sequence.resumeDefenderId;
+  game.forcedSequence = null;
+  game.logs.unshift("キノコ大発生による勝手な行動がすべて終了しました。");
+  if (sequence.afterSequence === "advance_turn") advanceTurn(game);
+  else passTurn(game);
+}
+
+function continueAfterCompletedAction(game) {
+  if (game.forcedSequence?.active) continueForcedRandomActions(game);
+  else passTurn(game);
 }
 
 function triggerSupernaturalEvent(game, actor) {
@@ -859,8 +986,8 @@ function triggerSupernaturalEvent(game, actor) {
     {
       name: "キノコ大発生",
       run() {
-        runForcedRandomActions(game, 3);
-        return "全員が3回ずつ勝手に行動した";
+        beginForcedRandomActions(game, 3);
+        return "全員が3回ずつ、通常の行動処理で勝手に行動する";
       }
     },
     {
@@ -874,24 +1001,27 @@ function triggerSupernaturalEvent(game, actor) {
       name: "巨大なタライ",
       run() {
         const target = players[Math.floor(Math.random() * players.length)];
-        resolveGuardianAttack(game, actor, target, {
+        const started = resolveGuardianAttack(game, actor, target, {
           name: "超常現象", element: "light", image: ""
         }, {
           name: "巨大なタライ", attack: 50, element: "light", chance: 100
-        });
-        return `${target.name}に光属性50ダメージ`;
+        }, { allowNormalReflect: false });
+        return started
+          ? `${target.name}に光属性攻50が命中し、防御選択へ進んだ`
+          : "巨大なタライは外れた";
       }
     },
     {
       name: "ブラックホール",
       run() {
-        const before = opponent.hp;
-        resolveGuardianAttack(game, actor, opponent, {
+        const started = resolveGuardianAttack(game, actor, opponent, {
           name: "超常現象", element: "dark", image: ""
         }, {
           name: "ブラックホール", attack: 30, element: "dark", chance: 75
         });
-        return opponent.hp < before ? `${opponent.name}に闇属性攻撃` : "闇属性攻撃は外れたか防がれた";
+        return started
+          ? `${opponent.name}に闇属性75%攻30が命中し、防御選択へ進んだ`
+          : "闇属性攻撃は外れた";
       }
     },
     {
@@ -1031,7 +1161,13 @@ function useUtilityAndEndTurn(game, uid, targetId) {
     || used.effect === "inflict_status"
   );
   if (!magicNegated && isOffensiveMagic) {
-    return beginMagicAttack(game, used, game.attackerId, resolvedTargetId);
+    const started = beginMagicAttack(game, used, game.attackerId, resolvedTargetId, {
+      allowSelfDefense: Boolean(game.forcedSequence?.active)
+    });
+    if (started && game.pendingAttack && game.forcedSequence?.active) {
+      game.pendingAttack.afterResolution = "mushroom_next";
+    }
+    return started;
   }
 
   if (magicNegated) {
@@ -1183,7 +1319,7 @@ function useUtilityAndEndTurn(game, uid, targetId) {
   drawCards(game, actor, 1);
   checkWinner(game);
   game.logs.unshift(`${used.name}: ${resultText}。`);
-  if (!game.winner && !game.pendingAttack) passTurn(game);
+  if (!game.winner && !game.pendingAttack) continueAfterCompletedAction(game);
   return true;
 }
 
@@ -1234,7 +1370,7 @@ function finishTradeUse(game, actor, tradeCardUid, message) {
   game.selectedUtilityUid = null;
   game.logs.unshift(message);
   checkWinner(game);
-  if (!game.winner && !game.pendingAttack) passTurn(game);
+  if (!game.winner && !game.pendingAttack) continueAfterCompletedAction(game);
 }
 
 function paySalePrice(buyer, price) {
@@ -1301,7 +1437,8 @@ function preparePurchaseOffer(game, sellerId) {
 
 function confirmPurchase(game, accept) {
   if (game.phase !== "buy_offer" || !game.pendingTrade?.offerCardUid) return false;
-  const buyer = getActor(game);
+  const guardianDecision = Boolean(game.pendingTrade.guardianDecision);
+  const buyer = guardianDecision ? game[game.pendingTrade.buyerId] : getActor(game);
   const seller = game[game.pendingTrade.sellerId];
   const offer = seller?.hand.find(card => card.uid === game.pendingTrade.offerCardUid);
   let message = "購入を見送りました。";
@@ -1318,7 +1455,15 @@ function confirmPurchase(game, accept) {
       message = `${buyer.name}は「${offer.name}」を￥${price}で購入しました。`;
     }
   }
-  finishTradeUse(game, buyer, game.pendingTrade.tradeCardUid, message);
+  if (guardianDecision) {
+    game.logs.unshift(`地球神の「買う」: ${message}`);
+    game.pendingTrade = null;
+    game.selectedUtilityUid = null;
+    checkWinner(game);
+    if (!game.winner) advanceTurn(game);
+  } else {
+    finishTradeUse(game, buyer, game.pendingTrade.tradeCardUid, message);
+  }
   return true;
 }
 
@@ -1475,7 +1620,7 @@ function resolvePendingAttack(game) {
     : (pending.element || pending.card.element || "none");
   const defenseCards = selectedDefenseCards.filter(card =>
     card.effect === "element_change"
-    || card.effect === "reflect_normal"
+    || (card.effect === "reflect_normal" && !pending.disallowNormalReflect)
     || (pending.isMagic && ["reflect_magic", "nullify_magic"].includes(card.effect))
     || (pending.isMagic && ["reflect_magic", "nullify_magic"].includes(card.secondaryEffect))
     || defenseElementCanBlock(resolvedElement, card.element)
@@ -1634,9 +1779,14 @@ function resolvePendingAttack(game) {
     return;
   }
   renderNow();
+  const afterResolution = pending.afterResolution || "pass_turn";
   setTimeout(() => {
     game.busy = false;
-    if (!game.winner) passTurn(game);
+    if (!game.winner) {
+      if (afterResolution === "advance_turn") advanceTurn(game);
+      else if (afterResolution === "mushroom_next") continueForcedRandomActions(game);
+      else passTurn(game);
+    }
     renderNow();
   }, RESOLVE_DELAY);
 }
@@ -1652,13 +1802,21 @@ function passTurn(game) {
   if (game.winner) return;
   const endingPlayer = game[game.turn];
   processEndOfTurnStatuses(game, endingPlayer);
-  runGuardianAfterTurn(game, endingPlayer);
+  const guardianPaused = runGuardianAfterTurn(game, endingPlayer);
   checkWinner(game);
   if (game.winner) {
     renderNow();
     return;
   }
+  if (guardianPaused || game.pendingAttack || game.pendingTrade?.guardianDecision) {
+    renderNow();
+    return;
+  }
+  advanceTurn(game);
+}
 
+function advanceTurn(game) {
+  if (game.winner) return;
   game.turn = opponentId(game.turn);
   game.attackerId = game.turn;
   game.defenderId = opponentId(game.turn);

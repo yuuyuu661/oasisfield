@@ -59,63 +59,70 @@ function guardianWeightedAction(guardian) {
   return guardian.actions[guardian.actions.length - 1];
 }
 
-function resolveGuardianAttack(game, owner, target, guardian, action) {
+function resolveGuardianAttack(game, owner, target, guardian, action, options = {}) {
   if (Math.random() > ((action.chance ?? 100) / 100)) {
     game.logs.unshift(`${guardian.name}の「${action.name}」は外れました。`);
-    return 0;
+    return false;
   }
   const element = action.element || guardian.element || "none";
-  const rainbow = target.hand.find(card => card.effect === "element_change");
-  let resolvedElement = element;
-  const usedDefense = [];
-  if (rainbow && element !== "none") {
-    usedDefense.push(rainbow);
-    resolvedElement = "none";
-  }
-  const candidates = target.hand
-    .filter(card => !usedDefense.includes(card) && isDefenseCard(card) && defenseElementCanBlock(resolvedElement, card.element))
-    .sort((a, b) => Number(a.defense || 0) - Number(b.defense || 0));
-  let defense = 0;
-  for (const card of candidates) {
-    if (defense >= Number(action.attack || 0)) break;
-    usedDefense.push(card);
-    defense += Number(card.defense || 0);
-  }
-  usedDefense.forEach(card => {
-    removeCardFromHand(target, card.uid);
-    drawCard(game, target);
-  });
-  const damage = Math.max(0, Number(action.attack || 0) - defense);
-  if (damage > 0 && resolvedElement === "dark") {
-    target.hp = 0;
-    if (target.guardian && Math.random() < 0.1) {
-      const guardianName = target.guardian.name;
-      target.guardian = null;
-      game.logs.unshift(`${target.name}の${guardianName}は、ダメージに驚いて去りました。`);
-    }
-    triggerSunCharm(game, target);
-  } else {
-    damagePlayer(game, target, damage);
-  }
-  if (damage > 0 && action.status) applyStatusEffect(game, target, action.status);
-  if (damage > 0 && action.drain) {
-    owner.hp = Math.min(owner.hpCap || 99, owner.hp + damage);
-    owner.maxHp = Math.max(owner.maxHp, owner.hp);
-  }
-  game.lastBattle = {
-    attackerId: owner === game.player ? "player" : "enemy",
-    defenderId: target === game.player ? "player" : "enemy",
-    attackCard: { ...action, name: `${guardian.name}・${action.name}`, image: guardian.image, element },
-    attackCards: [],
-    element: resolvedElement,
-    defenseCards: usedDefense,
-    attack: Number(action.attack || 0),
-    defense,
-    damage,
-    blocked: damage === 0 && usedDefense.length > 0,
-    resolvedAt: Date.now()
+  const ownerId = owner === game.player ? "player" : "enemy";
+  const targetId = target === game.player ? "player" : "enemy";
+  const attackCard = {
+    ...action,
+    name: `${guardian.name}・${action.name}`,
+    image: guardian.image,
+    element,
+    effect: action.drain ? "hp_drain" : (action.effect || "guardian_attack"),
+    statusEffect: action.status || action.statusEffect || "none"
   };
-  return damage;
+  game.attackerId = ownerId;
+  game.defenderId = targetId;
+  game.pendingAttack = {
+    card: attackCard,
+    enhancementCards: [],
+    element,
+    attack: Number(action.attack || 0),
+    hitCount: 1,
+    hit: true,
+    isMagic: Boolean(options.isMagic),
+    guardianAttack: true,
+    disallowNormalReflect: options.allowNormalReflect === false,
+    attackerId: ownerId,
+    defenderId: targetId,
+    effectOwnerId: ownerId,
+    skipDraw: true,
+    afterResolution: options.afterResolution
+      || (game.forcedSequence?.active ? "mushroom_next" : "pass_turn")
+  };
+  target.selectedDefense = [];
+  game.lastBattle = {
+    attackerId: ownerId,
+    defenderId: targetId,
+    attackCard,
+    attackCards: [attackCard],
+    element,
+    defenseCards: [],
+    attack: Number(action.attack || 0),
+    defense: 0,
+    damage: "🎯 命中"
+  };
+  game.hitResult = {
+    hit: true,
+    text: `${guardian.name}の攻撃が命中！ 防具を選択できます`
+  };
+  game.phase = "defense";
+  game.busy = false;
+  game.logs.unshift(`${guardian.name}の「${action.name}」が${target.name}へ命中しました。`);
+  renderNow();
+  if (target.isCpu) {
+    game.busy = true;
+    setTimeout(() => {
+      cpuChooseDefense(game);
+      renderNow();
+      setTimeout(() => resolvePendingAttack(game), RESOLVE_DELAY);
+    }, CPU_DELAY);
+  }
+  return true;
 }
 
 function runWorldArtifact(game, owner, target, guardian) {
@@ -127,7 +134,14 @@ function runWorldArtifact(game, owner, target, guardian) {
     return `${card.name}を手札に加えた`;
   }
   if (card.type === "weapon") {
-    resolveGuardianAttack(game, owner, target, guardian, { ...card, name: card.name, attack: card.attack });
+    resolveGuardianAttack(
+      game,
+      owner,
+      target,
+      guardian,
+      { ...card, name: card.name, attack: card.attack },
+      { afterResolution: "advance_turn" }
+    );
     return `${card.name}で攻撃した`;
   }
   if (card.effect === "exchange") {
@@ -159,13 +173,26 @@ function runWorldArtifact(game, owner, target, guardian) {
     const offer = target.hand[Math.floor(Math.random() * target.hand.length)];
     if (!offer) return `${card.name}を使ったが買える神器がなかった`;
     const price = Number(offer.price || 0);
-    if (owner.gold < price) return `${offer.name}を提示されたがゴールドが足りなかった`;
-    owner.gold -= price;
-    target.gold = Math.min(99, target.gold + price);
-    removeCardFromHand(target, offer.uid);
-    owner.hand.push(offer);
-    sortHand(owner);
-    return `${offer.name}を${target.name}から￥${price}で買った`;
+    if (owner.isCpu) {
+      if (owner.gold < price || Math.random() < 0.5) return `${offer.name}の購入を見送った`;
+      owner.gold -= price;
+      target.gold = Math.min(99, target.gold + price);
+      removeCardFromHand(target, offer.uid);
+      owner.hand.push(offer);
+      sortHand(owner);
+      return `${offer.name}を${target.name}から￥${price}で買った`;
+    }
+    game.pendingTrade = {
+      effect: "guardian_buy",
+      guardianDecision: true,
+      buyerId: owner === game.player ? "player" : "enemy",
+      sellerId: target === game.player ? "player" : "enemy",
+      offerCardUid: offer.uid
+    };
+    game.focusedCard = offer;
+    game.phase = "buy_offer";
+    game.busy = false;
+    return `${offer.name}（￥${price}）を提示した。購入するか選んでください`;
   }
   if (card.effect === "discard") {
     const discardTarget = (card.sourceName || card.name) === "イタズラマン" ? owner : target;
@@ -248,7 +275,7 @@ function runMoonMagic(game, owner, target, guardian) {
       chance: magic.effectChance,
       element: magic.element,
       drain: magic.effect === "hp_drain"
-    });
+    }, { isMagic: true, afterResolution: "advance_turn" });
   } else if (magic.effect === "inflict_status") {
     if (Math.random() <= Number(magic.effectChance ?? 100) / 100) applyStatusEffect(game, target, magic.statusEffect);
   } else if (magic.effect === "cure_status") {
@@ -262,9 +289,9 @@ function runMoonMagic(game, owner, target, guardian) {
   } else if (magic.effect === "summon_guardian") {
     summonRandomGuardian(game, owner);
   } else if (magic.effect === "double_attack") {
-    resolveGuardianAttack(game, owner, target, guardian, { name: "満月刀＋オーラ", attack: 20, element: "none" });
+    resolveGuardianAttack(game, owner, target, guardian, { name: "満月刀＋オーラ", attack: 20, element: "none" }, { afterResolution: "advance_turn" });
   } else if (magic.effect === "sure_all_attack") {
-    resolveGuardianAttack(game, owner, target, guardian, { name: "満月刀＋蜃気楼", attack: 10, element: "none" });
+    resolveGuardianAttack(game, owner, target, guardian, { name: "満月刀＋蜃気楼", attack: 10, element: "none" }, { afterResolution: "advance_turn" });
   }
   return `${magic.name}を起こした`;
 }
@@ -273,25 +300,30 @@ function runGuardianAfterTurn(game, endingPlayer) {
   const owner = endingPlayer === game.enemy ? game.player : game.enemy;
   const target = owner === game.player ? game.enemy : game.player;
   const guardian = owner.guardian;
-  if (!guardian || game.winner || Math.random() > 0.25) return;
+  if (!guardian || game.winner || Math.random() > 0.25) return false;
 
   const action = guardianWeightedAction(guardian);
   if (action.resummon) {
     summonRandomGuardian(game, owner);
-    return;
+    return false;
   }
   if (action.draw) drawCards(game, owner, action.draw);
   if (action.worldArtifact) {
     const detail = runWorldArtifact(game, owner, target, guardian);
     game.logs.unshift(`${guardian.name}は${detail}。`);
     checkWinner(game);
-    return;
+    if (game.forcedSequence?.active) {
+      game.forcedSequence.afterSequence = "advance_turn";
+      continueForcedRandomActions(game);
+      return true;
+    }
+    return Boolean(game.pendingAttack || game.pendingTrade?.guardianDecision);
   }
   if (action.moonMagic) {
     const detail = runMoonMagic(game, owner, target, guardian);
     game.logs.unshift(`${guardian.name}は${detail}。`);
     checkWinner(game);
-    return;
+    return Boolean(game.pendingAttack || game.pendingTrade?.guardianDecision);
   }
   if (action.cure) {
     owner.statuses = [];
@@ -312,8 +344,16 @@ function runGuardianAfterTurn(game, endingPlayer) {
   }
   if (action.status && !action.attack) applyStatusEffect(game, target, action.status);
   if (action.attack && Math.random() <= ((action.chance ?? 100) / 100)) {
-    resolveGuardianAttack(game, owner, target, guardian, { ...action, chance: 100 });
+    resolveGuardianAttack(
+      game,
+      owner,
+      target,
+      guardian,
+      { ...action, chance: 100 },
+      { afterResolution: "advance_turn" }
+    );
   }
   game.logs.unshift(`${guardian.name}の「${action.name}」が発動しました。`);
   checkWinner(game);
+  return Boolean(game.pendingAttack || game.pendingTrade?.guardianDecision);
 }

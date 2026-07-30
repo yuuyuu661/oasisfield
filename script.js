@@ -258,7 +258,9 @@ function renderPhase() {
     els.battleMessage.textContent = "購入先のステータスバーをタップしてください。";
   } else if (game.phase === "buy_offer") {
     els.phaseBadge.textContent = "購入確認";
-    els.battleMessage.textContent = "提示されたカードを購入するか選んでください。";
+    els.battleMessage.textContent = game.pendingTrade?.guardianDecision
+      ? "地球神が提示したカードを購入するか選んでください。"
+      : "提示されたカードを購入するか選んでください。";
   } else if (game.phase === "exchange") {
     els.phaseBadge.textContent = "両替";
     els.battleMessage.textContent = "HP・MP・ゴールドを好きに配分してください。";
@@ -612,14 +614,17 @@ function renderInteraction() {
   panel.classList.toggle("hidden", !["buy_offer", "exchange"].includes(game.phase));
   if (game.phase === "buy_offer") {
     const seller = game[game.pendingTrade?.sellerId];
+    const buyer = game.pendingTrade?.guardianDecision
+      ? game[game.pendingTrade?.buyerId]
+      : getActor(game);
     const offer = seller?.hand.find(card => card.uid === game.pendingTrade?.offerCardUid);
     panel.innerHTML = offer ? `
       <div class="trade-offer">
         ${miniCardHtml(offer, "attack")}
         <strong>価格 ￥${offer.price || 0}</strong>
-        <span>所持金 ￥${game.player.gold}</span>
+        <span>所持金 ￥${buyer?.gold ?? 0}</span>
         <div class="action-row">
-          <button id="acceptPurchaseBtn" class="primary-btn" ${game.player.gold < (offer.price || 0) ? "disabled" : ""}>購入する</button>
+          <button id="acceptPurchaseBtn" class="primary-btn" ${(buyer?.gold ?? 0) < (offer.price || 0) ? "disabled" : ""}>購入する</button>
           <button id="declinePurchaseBtn" class="ghost-btn">見送る</button>
         </div>
       </div>` : "提示できるカードがありません。";
