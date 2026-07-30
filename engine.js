@@ -230,22 +230,27 @@ function attackCardAllowsEnhancements(card) {
 }
 
 function drawCard(game, player) {
-  if (player.hand.length >= MAX_HAND_SIZE) {
-    game.logs.unshift(`${player.name}の手札は${MAX_HAND_SIZE}枚のため補充されませんでした。`);
-    return null;
-  }
   const card = createRandomCard();
   if (!card) {
     game.logs.unshift("授かり対象のカードがありません。");
     return null;
   }
-  player.hand.push(card);
-  sortHand(player);
+  receiveCard(game, player, card);
   return card;
 }
 
 function drawCards(game, player, count) {
   for (let i = 0; i < count; i++) drawCard(game, player);
+}
+
+function receiveCard(game, player, card) {
+  player.hand.push(card);
+  while (player.hand.length > MAX_HAND_SIZE) {
+    const index = Math.floor(Math.random() * player.hand.length);
+    const [discarded] = player.hand.splice(index, 1);
+    game.logs.unshift(`${player.name}の手札上限により「${discarded.name}」が消えました。`);
+  }
+  sortHand(player);
 }
 
 function removeCardFromHand(player, uid) {
@@ -257,6 +262,7 @@ function removeCardFromHand(player, uid) {
 function playerHasWeapon(player) {
   return player.hand.some(card =>
     (card.type === "weapon" && !isAdditionalAttackCard(card))
+    || isAdditionalAttackCard(card)
     || card.effect === "attack_defense"
   );
 }
@@ -392,8 +398,11 @@ function selectedSpiritSupportCards(game) {
     .filter(isSpiritSupportCard);
 }
 
-function attackSupportMpCost(actor, cards, sequenceCards = cards) {
+function attackSupportMpCost(actor, cards, sequenceCards = cards, primaryCard = null) {
   const freeMagicUids = new Set();
+  if (isSpiritSupportCard(primaryCard) && cards.length) {
+    freeMagicUids.add(cards[0].uid);
+  }
   sequenceCards.forEach((card, index) => {
     if (!isSpiritSupportCard(card)) return;
     const preceding = sequenceCards[index - 1];
@@ -432,7 +441,7 @@ function toggleAttackSupportMagic(game, card) {
         || actor.learnedMagics.find(candidate => candidate.uid === uid))
       .filter(Boolean);
     const magicCards = cards.filter(isAttackSupportMagic);
-    if (attackSupportMpCost(actor, magicCards, cards) > actor.mp) {
+    if (attackSupportMpCost(actor, magicCards, cards, game.selectedAttackCard) > actor.mp) {
       game.logs.unshift("選択した奇跡を同時に使うためのMPが足りません。");
       return false;
     }
@@ -474,7 +483,12 @@ function toggleSpiritSupportCard(game, card) {
       || actor.learnedMagics.find(candidate => candidate.uid === uid))
     .filter(Boolean);
   const magicCards = sequenceCards.filter(isAttackSupportMagic);
-  if (!selected && attackSupportMpCost(actor, magicCards, sequenceCards) > actor.mp) {
+  if (!selected && attackSupportMpCost(
+    actor,
+    magicCards,
+    sequenceCards,
+    game.selectedAttackCard
+  ) > actor.mp) {
     game.logs.unshift("精霊系神器を重ねても、選択した奇跡のMPが足りません。");
     return false;
   }
@@ -554,6 +568,9 @@ function consumeAttackSupportMagics(game, actor) {
     .filter(Boolean);
   const spiritCards = supportSequence.filter(isSpiritSupportCard);
   const freeMagicUids = new Set();
+  if (isSpiritSupportCard(game.selectedAttackCard) && cards.length) {
+    freeMagicUids.add(cards[0].uid);
+  }
   supportSequence.forEach((card, index) => {
     if (!isSpiritSupportCard(card)) return;
     const preceding = supportSequence[index - 1];
@@ -631,15 +648,11 @@ function combineAttackElements(cards) {
   );
   if (forced?.element && forced.element !== "none") return forced.element;
 
-  const elements = [...new Set(usedCards.map(card => card.element || "none"))];
+  const elements = [...new Set(
+    usedCards
+      .map(card => card.element || "none")
+  )];
   if (elements.length === 1) return elements[0];
-  if (
-    elements.length === 2
-    && elements.includes("light")
-    && elements.some(element => ["fire", "water", "wood", "earth"].includes(element))
-  ) {
-    return elements.find(element => element !== "light");
-  }
   return "none";
 }
 
@@ -1547,8 +1560,7 @@ function completeSale(game, buyerId) {
   const payment = paySalePrice(buyer, price);
   seller.gold = Math.min(99, seller.gold + price);
   removeCardFromHand(seller, card.uid);
-  buyer.hand.push(card);
-  sortHand(buyer);
+  receiveCard(game, buyer, card);
   const message = `${seller.name}は${buyer.name}へ「${card.name}」を￥${price}で売りました（支払い：${salePaymentText(payment)}）。`;
   finishTradeUse(game, seller, game.pendingTrade.tradeCardUid, message);
   return true;
@@ -1588,8 +1600,7 @@ function confirmPurchase(game, accept) {
       buyer.gold -= price;
       seller.gold = Math.min(99, seller.gold + price);
       removeCardFromHand(seller, offer.uid);
-      buyer.hand.push(offer);
-      sortHand(buyer);
+      receiveCard(game, buyer, offer);
       message = `${buyer.name}は「${offer.name}」を￥${price}で購入しました。`;
     }
   }
@@ -1634,8 +1645,7 @@ function executeCpuTrade(game, uid) {
     if (sale) {
       actor.gold = Math.min(99, actor.gold + price);
       removeCardFromHand(actor, sale.uid);
-      target.hand.push(sale);
-      sortHand(target);
+      receiveCard(game, target, sale);
       finishTradeUse(game, actor, uid, `CPUは「${sale.name}」をあなたへ￥${price}で売りました（支払い：${salePaymentText(payment)}）。`);
     } else {
       finishTradeUse(game, actor, uid, "CPUの売却は成立しませんでした。");
@@ -1647,8 +1657,7 @@ function executeCpuTrade(game, uid) {
       actor.gold -= price;
       target.gold = Math.min(99, target.gold + price);
       removeCardFromHand(target, offer.uid);
-      actor.hand.push(offer);
-      sortHand(actor);
+      receiveCard(game, actor, offer);
       finishTradeUse(game, actor, uid, `CPUはあなたから「${offer.name}」を￥${price}で買いました。`);
     } else {
       finishTradeUse(game, actor, uid, "CPUは購入を見送りました。");
@@ -1671,13 +1680,6 @@ function prayAndEndTurn(game, player) {
   if (playerHasWeapon(player)) {
     game.logs.unshift("手札に武器があるため祈れません。");
     return;
-  }
-  if (player.hand.length >= MAX_HAND_SIZE) {
-    const discardable = player.hand.filter(card => (card.sourceName || card.name) !== "あぶないウス");
-    const discarded = discardable[Math.floor(Math.random() * discardable.length)];
-    if (discarded && discardCard(game, player, discarded)) {
-      game.logs.unshift(`手札が${MAX_HAND_SIZE}枚だったため、祈りで「${discarded.name}」を無作為に捨てました。`);
-    }
   }
   const received = drawCard(game, player);
   game.logs.unshift(received

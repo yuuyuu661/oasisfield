@@ -485,7 +485,7 @@ function renderHand() {
   els.handHelp.textContent = canDefense
     ? "防具カードを選び、自分のバトル場またはステータスバーをタップして防御を確定します。"
     : isSelectingSale
-      ? "売りたいカードを1枚選んでください。"
+      ? "￥価格を確認して、売りたいカードを1枚選んでください。"
     : isTarget
       ? "追加攻撃カードを選ぶか、相手のステータスバーをタップしてください。"
     : isUtilityTarget
@@ -532,6 +532,12 @@ function renderHand() {
     const cardEl = document.createElement("div");
     cardEl.className = `hand-card ${card.type} ${usable ? "" : "disabled"} ${selected ? "selected" : ""}`;
     cardEl.innerHTML = cardHtml(visibleCard);
+    if (isSelectingSale) {
+      cardEl.insertAdjacentHTML(
+        "beforeend",
+        `<span class="sale-price-badge">￥${Number(card.price || 0)}</span>`
+      );
+    }
 
     cardEl.addEventListener("mouseenter", () => {
       game.focusedCard = card;

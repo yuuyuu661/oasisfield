@@ -30,6 +30,56 @@ assert.equal(evaluate('defenseElementCanBlock("fire", "water")'), true);
 assert.equal(evaluate('defenseElementCanBlock("light", "water")'), false);
 assert.equal(evaluate('defenseElementCanBlock("dark", "none")'), true);
 assert.equal(
+  evaluate('combineAttackElements([{ element: "none" }, { element: "fire" }])'),
+  "none"
+);
+assert.equal(
+  evaluate('combineAttackElements([{ element: "fire" }, { element: "fire" }])'),
+  "fire"
+);
+assert.equal(
+  evaluate('combineAttackElements([{ element: "fire" }, { element: "water" }])'),
+  "none"
+);
+assert.equal(
+  evaluate('combineAttackElements([{ element: "fire" }, { element: "light" }])'),
+  "none"
+);
+assert.equal(
+  evaluate(`(() => {
+    const game = {
+      pendingAttack: {
+        hit: true, isMagic: false, attack: 3, element: "none",
+        card: { element: "none" },
+        enhancementCards: [{ type: "magic", effect: "add_magic_attack", element: "fire" }]
+      },
+      defenderId: "enemy", enemy: createPlayer("E")
+    };
+    return canUseDefenseCard(
+      game,
+      { type: "armor", effect: "defense", defense: 30, element: "none" }
+    );
+  })()`),
+  true
+);
+assert.equal(
+  evaluate(`(() => {
+    const game = {
+      pendingAttack: {
+        hit: true, isMagic: true, attack: 10, element: "fire",
+        card: { type: "magic", effect: "magic_attack", element: "fire" },
+        enhancementCards: []
+      },
+      defenderId: "enemy", enemy: createPlayer("E")
+    };
+    return canUseDefenseCard(
+      game,
+      { type: "armor", effect: "defense", defense: 30, element: "none" }
+    );
+  })()`),
+  false
+);
+assert.equal(
   evaluate('isDefenseCard({ type: "item", effect: "heal_hp", defense: 0 })'),
   false
 );
@@ -45,6 +95,30 @@ assert.equal(evaluate('attackCardAllowsEnhancements({ effect: "all_attack" })'),
 assert.equal(
   evaluate(`playerHasWeapon({
     hand: [{ type: "armor", effect: "attack_defense" }]
+  })`),
+  true
+);
+assert.deepEqual(
+  evaluate(`(() => {
+    const game = { logs: [] };
+    const player = createPlayer("P");
+    player.hand = Array.from({ length: 18 }, (_, i) => ({
+      uid: "old-" + i, name: "旧カード" + i, type: "weapon", effect: "attack"
+    }));
+    receiveCard(game, player, {
+      uid: "incoming", name: "新カード", type: "armor", effect: "defense"
+    });
+    return {
+      length: player.hand.length,
+      keptIncoming: player.hand.some(card => card.uid === "incoming"),
+      removedFirst: !player.hand.some(card => card.uid === "old-0")
+    };
+  })()`),
+  { length: 18, keptIncoming: true, removedFirst: true }
+);
+assert.equal(
+  evaluate(`playerHasWeapon({
+    hand: [{ type: "enchant", effect: "add_attack", catalogGroup: "additional_weapon" }]
   })`),
   true
 );
@@ -82,10 +156,11 @@ assert.deepEqual(
     actor.hand = [aura, spirit];
     return [
       attackSupportMpCost(actor, [aura], [aura, spirit]),
-      attackSupportMpCost(actor, [aura], [spirit, aura])
+      attackSupportMpCost(actor, [aura], [spirit, aura]),
+      attackSupportMpCost(actor, [aura], [aura], spirit)
     ];
   })()`),
-  [0, 6]
+  [0, 6, 0]
 );
 
 const supportAttack = evaluate(`(() => {

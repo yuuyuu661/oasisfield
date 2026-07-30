@@ -132,8 +132,7 @@ function runWorldArtifact(game, owner, target, guardian) {
   const card = createRandomCard();
   if (!card) return "神器を授かれなかった";
   if (card.type === "armor" || card.type === "magic" || isAdditionalAttackCard(card)) {
-    owner.hand.push(card);
-    sortHand(owner);
+    receiveCard(game, owner, card);
     return `${card.name}を手札に加えた`;
   }
   if (card.type === "weapon") {
@@ -168,8 +167,7 @@ function runWorldArtifact(game, owner, target, guardian) {
     const payment = paySalePrice(target, price);
     owner.gold = Math.min(99, owner.gold + price);
     removeCardFromHand(owner, sale.uid);
-    target.hand.push(sale);
-    sortHand(target);
+    receiveCard(game, target, sale);
     return `${sale.name}を${target.name}へ￥${price}で売った（支払い：${salePaymentText(payment)}）`;
   }
   if (card.effect === "buy") {
@@ -181,8 +179,7 @@ function runWorldArtifact(game, owner, target, guardian) {
       owner.gold -= price;
       target.gold = Math.min(99, target.gold + price);
       removeCardFromHand(target, offer.uid);
-      owner.hand.push(offer);
-      sortHand(owner);
+      receiveCard(game, owner, offer);
       return `${offer.name}を${target.name}から￥${price}で買った`;
     }
     game.pendingTrade = {
@@ -258,12 +255,10 @@ function runWorldArtifact(game, owner, target, guardian) {
     return `${card.name}で守護神を交代した`;
   }
   if (["revive", "custom"].includes(card.effect)) {
-    owner.hand.push(card);
-    sortHand(owner);
+    receiveCard(game, owner, card);
     return `${card.name}を手札に加えた`;
   }
-  owner.hand.push(card);
-  sortHand(owner);
+  receiveCard(game, owner, card);
   return `${card.name}を手札に加えた`;
 }
 

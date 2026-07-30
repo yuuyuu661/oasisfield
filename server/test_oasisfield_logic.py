@@ -299,6 +299,80 @@ class OasisFieldRulesTest(unittest.TestCase):
             self.game["pending_attack"]["targets"],
         )
 
+    def test_additional_weapon_can_attack_alone(self):
+        actor = self.make_actor()
+        additional = next(
+            rules._copy_card(item)
+            for item in rules.CATALOG
+            if item.get("catalogGroup") == "additional_weapon"
+        )
+        actor["hand"] = [additional]
+
+        with patch("oasisfield_logic._hit", return_value=True):
+            rules.apply_action(
+                self.game,
+                actor["user_id"],
+                {
+                    "action": "play",
+                    "card_uid": additional["uid"],
+                    "target_id": "2",
+                },
+            )
+
+        self.assertEqual(
+            self.game["pending_attack"]["attack"],
+            int(additional["attack"]),
+        )
+        self.assertEqual(self.game["last_event"]["kind"], "attack")
+
+    def test_magic_staff_uses_twice_all_remaining_mp(self):
+        actor = self.make_actor()
+        staff = card("マジカルステッキ")
+        actor["hand"] = [staff]
+        actor["mp"] = 7
+
+        with patch("oasisfield_logic._hit", return_value=True):
+            rules.apply_action(
+                self.game,
+                actor["user_id"],
+                {
+                    "action": "play",
+                    "card_uid": staff["uid"],
+                    "target_id": "2",
+                },
+            )
+
+        self.assertEqual(self.game["pending_attack"]["attack"], 14)
+        self.assertEqual(actor["mp"], 0)
+
+    def test_multiple_mirages_repeat_all_enemies_and_force_hits(self):
+        actor = self.make_actor()
+        weapon = card("銅のこん棒")
+        weapon["effectChance"] = 0
+        first_mirage = card("＜蜃気楼＞")
+        second_mirage = card("＜蜃気楼＞")
+        actor["hand"] = [weapon, first_mirage, second_mirage]
+        actor["mp"] = 10
+
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {
+                "action": "play",
+                "card_uid": weapon["uid"],
+                "support_uids": [first_mirage["uid"], second_mirage["uid"]],
+                "target_id": "2",
+            },
+        )
+
+        targets = self.game["pending_attack"]["targets"]
+        self.assertEqual(len(targets), 4)
+        self.assertEqual(targets.count("2"), 2)
+        self.assertEqual(targets.count("3"), 2)
+        self.assertNotIn(actor["user_id"], targets)
+        self.assertTrue(self.game["pending_attack"]["force_hit"])
+        self.assertTrue(self.game["pending_attack"]["hit"])
+
     def test_rainbow_curtain_allows_any_defense_element(self):
         actor = self.make_actor()
         defender = rules.find_player(self.game, "2")
@@ -570,6 +644,90 @@ class OasisFieldRulesTest(unittest.TestCase):
         self.assertEqual((buyer["gold"], buyer["mp"], buyer["hp"]), (0, 0, 17))
         self.assertTrue(any(item["id"] == sale["id"] for item in buyer["hand"]))
 
+    def test_declined_purchase_consumes_card_and_draws_replacement(self):
+        actor = self.make_actor()
+        seller = rules.find_player(self.game, "2")
+        buy = card("買う")
+        offer = next(
+            rules._copy_card(item)
+            for item in rules.CATALOG
+            if item.get("effect") == "heal_hp"
+        )
+        replacement = next(
+            rules._copy_card(item)
+            for item in rules.CATALOG
+            if item["id"] not in {buy["id"], offer["id"]}
+        )
+        actor["hand"] = [buy]
+        seller["hand"] = [offer]
+
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {"action": "play", "card_uid": buy["uid"]},
+        )
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {
+                "action": "trade",
+                "target_id": seller["user_id"],
+                "confirm": False,
+            },
+        )
+        with patch("oasisfield_logic._weighted_card", return_value=replacement):
+            rules.apply_action(
+                self.game,
+                actor["user_id"],
+                {"action": "trade", "cancel": True},
+            )
+
+        self.assertFalse(any(item["uid"] == buy["uid"] for item in actor["hand"]))
+        self.assertEqual(len(actor["hand"]), 1)
+        self.assertEqual(actor["hand"][0]["id"], replacement["id"])
+        self.assertIsNone(self.game["pending_trade"])
+        self.assertEqual(self.game["last_event"]["kind"], "trade")
+
+    def test_learned_magic_is_visible_and_reusable_for_same_mp_cost(self):
+        actor = self.make_actor()
+        magic = card("＜泉＞")
+        actor["hand"] = [magic]
+        actor["hp"] = 20
+        actor["mp"] = 20
+
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {
+                "action": "play",
+                "card_uid": magic["uid"],
+                "target_id": actor["user_id"],
+            },
+        )
+        self.assertEqual(actor["mp"], 13)
+        self.assertEqual(len(actor["learned_magics"]), 1)
+        hand_count = len(actor["hand"])
+        learned_uid = actor["learned_magics"][0]["uid"]
+
+        self.make_actor(actor["user_id"])
+        actor["hp"] = 20
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {
+                "action": "play",
+                "card_uid": learned_uid,
+                "target_id": actor["user_id"],
+            },
+        )
+
+        self.assertEqual(actor["mp"], 6)
+        self.assertEqual(len(actor["learned_magics"]), 1)
+        self.assertEqual(len(actor["hand"]), hand_count)
+        state = rules.public_state(self.game, actor["user_id"])["game"]
+        mine = next(player for player in state["players"] if player["is_me"])
+        self.assertEqual(mine["learned_magics"][0]["uid"], learned_uid)
+
     def test_fog_hides_opponents_and_randomizes_enemy(self):
         actor = self.make_actor()
         actor["statuses"] = ["fog"]
@@ -582,16 +740,32 @@ class OasisFieldRulesTest(unittest.TestCase):
             targets = rules._attack_targets(self.game, actor, weapon, "2")
         self.assertEqual(targets, ["3"])
 
-    def test_endgame_draw_uses_demon_table(self):
+    def test_endgame_demon_activates_then_draws_a_normal_card(self):
         player = self.make_actor()
         player["hand"] = []
         self.game["endgame"] = True
-        with patch("oasisfield_logic.random.random", return_value=0.0), patch(
-            "oasisfield_logic.random.choices",
-            return_value=["小悪魔"],
+        demon = card("小悪魔")
+        replacement = card("銅のこん棒")
+        with patch(
+            "oasisfield_logic._weighted_card",
+            side_effect=[demon, replacement],
         ):
             rules._draw(self.game, player)
-        self.assertEqual(player["hand"][0]["sourceName"], "小悪魔")
+        self.assertEqual(player["hp"], 30)
+        self.assertEqual(len(player["hand"]), 1)
+        self.assertEqual(player["hand"][0]["sourceName"], "銅のこん棒")
+
+    def test_dangerous_mortar_returns_when_discarded(self):
+        player = self.make_actor()
+        mortar = card("あぶないウス")
+        player["hand"] = [mortar]
+        player["hp"] = 40
+
+        discarded = rules._discard_owned(self.game, player, mortar)
+
+        self.assertFalse(discarded)
+        self.assertEqual(player["hp"], 39)
+        self.assertEqual(player["hand"][0]["uid"], mortar["uid"])
 
     def test_learned_magic_limit_is_six(self):
         player = self.make_actor()
@@ -603,6 +777,231 @@ class OasisFieldRulesTest(unittest.TestCase):
             magics[0]["id"],
             {known["id"] for known in player["learned_magics"]},
         )
+
+    def test_dream_hat_replaces_remaining_hand_and_applies_dream(self):
+        actor = self.make_actor()
+        defender = rules.find_player(self.game, "2")
+        weapon = card("銅のこん棒")
+        dream_hat = card("夢見る帽子")
+        old_cards = [card("銀のこん棒"), card("革の帽子")]
+        actor["hand"] = [weapon]
+        defender["hand"] = [dream_hat, *old_cards]
+        old_uids = {item["uid"] for item in defender["hand"]}
+        replacements = [
+            card("金のこん棒"),
+            card("革の服"),
+            card("買う"),
+            card("銅のこん棒"),
+        ]
+
+        with (
+            patch("oasisfield_logic._hit", return_value=True),
+            patch("oasisfield_logic._weighted_card", side_effect=replacements),
+        ):
+            rules.apply_action(
+                self.game,
+                actor["user_id"],
+                {
+                    "action": "play",
+                    "card_uid": weapon["uid"],
+                    "target_id": defender["user_id"],
+                },
+            )
+            rules.apply_action(
+                self.game,
+                defender["user_id"],
+                {
+                    "action": "defend",
+                    "defense_uids": [dream_hat["uid"]],
+                },
+            )
+
+        self.assertIn("dream", defender["statuses"])
+        self.assertEqual(len(defender["hand"]), 3)
+        self.assertTrue(old_uids.isdisjoint(item["uid"] for item in defender["hand"]))
+
+    def test_heaven_grass_restores_mp_and_applies_heaven(self):
+        actor = self.make_actor()
+        heaven_grass = card("天国草")
+        actor["hand"] = [heaven_grass]
+        actor["mp"] = 0
+
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {
+                "action": "play",
+                "card_uid": heaven_grass["uid"],
+                "target_id": actor["user_id"],
+            },
+        )
+
+        self.assertEqual(actor["mp"], 20)
+        self.assertIn("heaven", actor["statuses"])
+
+    def test_spirit_doll_makes_next_magic_free(self):
+        actor = self.make_actor()
+        doll = card("精霊のぬいぐるみ")
+        actor["hand"] = [doll]
+        actor["mp"] = 0
+
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {
+                "action": "play",
+                "card_uid": doll["uid"],
+                "target_id": actor["user_id"],
+            },
+        )
+        self.assertEqual(actor["free_magic_uses"], 1)
+
+        self.make_actor(actor["user_id"])
+        spring = card("＜泉＞")
+        actor["hand"] = [spring]
+        actor["hp"] = 20
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {
+                "action": "play",
+                "card_uid": spring["uid"],
+                "target_id": actor["user_id"],
+            },
+        )
+
+        self.assertEqual(actor["mp"], 0)
+        self.assertEqual(actor["free_magic_uses"], 0)
+        self.assertEqual(actor["hp"], 30)
+
+    def test_spirit_staff_makes_combined_aura_free(self):
+        actor = self.make_actor()
+        staff = card("精霊の杖")
+        aura = card("＜オーラ＞")
+        actor["hand"] = [staff, aura]
+        actor["mp"] = 0
+
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {
+                "action": "play",
+                "card_uid": staff["uid"],
+                "support_uids": [aura["uid"]],
+                "target_id": "2",
+            },
+        )
+
+        self.assertEqual(actor["mp"], 0)
+        self.assertEqual(self.game["pending_attack"]["attack"], 24)
+
+    def test_cursed_greatsword_deals_the_same_damage_to_its_user(self):
+        actor = self.make_actor()
+        defender = rules.find_player(self.game, "2")
+        greatsword = card("邪神の大剣")
+        actor["hand"] = [greatsword]
+        actor["hp"] = 40
+        defender["hp"] = 40
+
+        with patch("oasisfield_logic._hit", return_value=True):
+            rules.apply_action(
+                self.game,
+                actor["user_id"],
+                {
+                    "action": "play",
+                    "card_uid": greatsword["uid"],
+                    "target_id": defender["user_id"],
+                },
+            )
+            rules.apply_action(
+                self.game,
+                defender["user_id"],
+                {"action": "defend", "defense_uids": []},
+            )
+
+        self.assertEqual(defender["hp"], 26)
+        self.assertEqual(actor["hp"], 26)
+
+    def test_fatal_sale_payment_updates_buyer_defeat_state(self):
+        actor = self.make_actor()
+        buyer = rules.find_player(self.game, "2")
+        sell = card("売る")
+        sale = card("銀のこん棒")
+        actor["hand"] = [sell, sale]
+        buyer["hand"] = []
+        buyer["gold"], buyer["mp"], buyer["hp"] = 0, 0, 3
+        self.game["pending_trade"] = {"card_uid": sell["uid"], "effect": "sell"}
+        self.game["phase"] = "trade_sell"
+
+        rules._trade(
+            self.game,
+            actor,
+            {"target_id": buyer["user_id"], "card_uid": sale["uid"]},
+        )
+
+        self.assertEqual(buyer["hp"], 0)
+        self.assertFalse(buyer["alive"])
+
+    def test_received_card_randomly_replaces_one_card_at_hand_limit(self):
+        actor = self.make_actor()
+        actor["hand"] = [card("銅のこん棒") for _ in range(rules.HAND_LIMIT)]
+        removed = actor["hand"][5]
+        incoming = card("神の盾")
+
+        with patch("oasisfield_logic.random.choice", return_value=removed):
+            rules._receive_card(self.game, actor, incoming)
+
+        self.assertEqual(len(actor["hand"]), rules.HAND_LIMIT)
+        self.assertNotIn(removed["uid"], {item["uid"] for item in actor["hand"]})
+        self.assertIn(incoming["uid"], {item["uid"] for item in actor["hand"]})
+        self.assertIn("手札上限", self.game["logs"][0])
+
+    def test_different_weapon_and_plus_magic_elements_become_neutral(self):
+        actor = self.make_actor()
+        defender = rules.find_player(self.game, "2")
+        weapon = card("銅のこん棒")
+        fireball = card("＜火の玉＞")
+        god_shield = card("神の盾")
+        actor["hand"] = [weapon, fireball]
+        actor["mp"] = 10
+        defender["hand"] = [god_shield]
+
+        with patch("oasisfield_logic._hit", return_value=True):
+            rules._begin_attack(
+                self.game,
+                actor,
+                weapon["uid"],
+                [fireball["uid"]],
+                defender["user_id"],
+            )
+
+        self.assertEqual(self.game["pending_attack"]["element"], "none")
+        self.assertTrue(rules._can_block(god_shield, self.game["pending_attack"]))
+        self.assertEqual(rules._elements([card("たいまつ"), card("＜火の玉＞")]), "fire")
+        self.assertEqual(rules._elements([card("たいまつ"), card("＜氷＞")]), "none")
+        self.assertEqual(rules._elements([card("たいまつ"), card("＜流星＞")]), "none")
+
+    def test_elemental_attack_magic_cannot_be_blocked_by_neutral_armor(self):
+        actor = self.make_actor()
+        defender = rules.find_player(self.game, "2")
+        flame = card("＜炎＞")
+        god_shield = card("神の盾")
+        actor["hand"] = [flame]
+        actor["mp"] = 10
+        defender["hand"] = [god_shield]
+
+        with patch("oasisfield_logic._hit", return_value=True):
+            rules._begin_attack(
+                self.game,
+                actor,
+                flame["uid"],
+                [],
+                defender["user_id"],
+            )
+
+        self.assertTrue(self.game["pending_attack"]["is_magic"])
+        self.assertEqual(self.game["pending_attack"]["element"], "fire")
+        self.assertFalse(rules._can_block(god_shield, self.game["pending_attack"]))
 
 
 if __name__ == "__main__":

@@ -782,6 +782,7 @@ button:disabled {
 }
 
 .hand-card {
+  position: relative;
   width: 100%;
   min-width: 0;
   height: 165px;
@@ -793,6 +794,22 @@ button:disabled {
   cursor: pointer;
   transition: .15s ease;
   overflow: hidden;
+}
+
+.sale-price-badge {
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  z-index: 2;
+  padding: 2px 7px;
+  border: 2px solid #d8a700;
+  border-radius: 999px;
+  background: #fff3a4;
+  color: #6d4b00;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.2;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .22);
 }
 
 .hand-card:hover {
