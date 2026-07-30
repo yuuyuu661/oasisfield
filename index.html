@@ -7,7 +7,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="stylesheet" href="style.css?v=10.6.0">
+  <link rel="stylesheet" href="style.css?v=10.7.0">
 </head>
 <body>
 
@@ -48,23 +48,25 @@
         <div class="combat-side">
           <div id="arenaAttackerName" class="combat-name">攻撃側</div>
           <div id="arenaAttackCard" class="combat-card empty">攻撃カードなし</div>
+          <div id="attackTotal" class="combat-total attack-total">攻 0</div>
         </div>
 
         <div class="combat-center">
           <div class="vs-mark">VS</div>
-          <div id="calcView" class="calc-view">攻撃 0 - 防御 0 = 0</div>
           <div id="damageView" class="damage-view">待機中</div>
         </div>
 
         <div class="combat-side">
           <div id="arenaDefenderName" class="combat-name">防御側</div>
           <div id="arenaDefenseCards" class="combat-card-list empty">防御カードなし</div>
+          <div id="defenseTotal" class="combat-total defense-total">守 0</div>
         </div>
       </div>
 
       <div class="battle-controls">
         <div class="action-row">
           <button id="prayBtn" class="pray-btn">✨ 祈る</button>
+          <button id="cancelTradeBtn" class="ghost-btn trade-cancel-btn hidden">キャンセル</button>
         </div>
         <div id="interactionPanel" class="interaction-panel hidden"></div>
       </div>
@@ -128,13 +130,13 @@
   </main>
 </div>
 
-<script src="card-effects.js?v=10.6.0"></script>
-<script src="card-storage.js?v=10.6.0"></script>
-<script src="catalog.js?v=10.6.0"></script>
-<script src="cards.js?v=10.6.0"></script>
-<script src="guardians.js?v=10.6.0"></script>
-<script src="engine.js?v=10.6.0"></script>
-<script src="cpu.js?v=10.6.0"></script>
-<script src="script.js?v=10.6.0"></script>
+<script src="card-effects.js?v=10.7.0"></script>
+<script src="card-storage.js?v=10.7.0"></script>
+<script src="catalog.js?v=10.7.0"></script>
+<script src="cards.js?v=10.7.0"></script>
+<script src="guardians.js?v=10.7.0"></script>
+<script src="engine.js?v=10.7.0"></script>
+<script src="cpu.js?v=10.7.0"></script>
+<script src="script.js?v=10.7.0"></script>
 </body>
 </html>

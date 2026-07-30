@@ -188,7 +188,8 @@ const OASIS_ALL_WEAPONS = [
   allWeapon("植物杯", 4, 75, 6, { element: "wood" }), allWeapon("魔神の木馬", 8, 75, 6, { element: "wood" }),
   allWeapon("岩石杯", 4, 75, 6, { element: "earth" }), allWeapon("ガケッツチ", 6, 25, 4, { element: "earth" }),
   allWeapon("プチサターン", 20, 25, 15, { element: "earth" }), allWeapon("イナヅマキッズ", 3, 25, 2, { element: "light" }),
-  allWeapon("光のオーブ", 6, 75, 10, { element: "light" }), allWeapon("昇天弓", 1, 25, 10, { element: "light" }),
+  allWeapon("光のオーブ", 6, 75, 10, { element: "light" }),
+  allWeapon("昇天弓", 1, 25, 10, { element: "light", ascensionHitChance: 75, ascensionAttack: 30 }),
   allWeapon("シャドウハンド", 2, 50, 8, { element: "dark", effect: "instant_defeat" })
 ];
 

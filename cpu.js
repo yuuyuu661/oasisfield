@@ -43,7 +43,9 @@ function cpuTakeAttackAction(game) {
       window.renderGame();
       return;
     }
-    const utility = cpu.hand.find(card => card.type === "item" || card.type === "magic");
+    const utility = cpu.hand.find(card =>
+      (card.type === "item" || card.type === "magic") && !isPassiveHandCard(card)
+    );
     if (utility) {
       game.busy = false;
       useUtilityAndEndTurn(game, utility.uid);

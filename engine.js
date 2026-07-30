@@ -93,6 +93,20 @@ function hasPassiveCard(player, sourceName) {
   return player.hand.some(card => (card.sourceName || card.name) === sourceName);
 }
 
+function isPassiveHandCard(card) {
+  return card?.effect === "revive";
+}
+
+function triggerSunCharm(game, player) {
+  if (player.hp > 0) return false;
+  const charm = player.hand.find(card => (card.sourceName || card.name) === "太陽のお守り");
+  if (!charm) return false;
+  removeCardFromHand(player, charm.uid);
+  player.hp = Number(charm.effectPower || 10);
+  game.logs.unshift(`${player.name}は太陽のお守りを自動消費し、HP${player.hp}で復活しました。`);
+  return true;
+}
+
 function damagePlayer(game, player, amount, { allowGuardianDeparture = true } = {}) {
   const damage = Math.max(0, Number(amount || 0));
   if (damage <= 0) return 0;
@@ -102,12 +116,7 @@ function damagePlayer(game, player, amount, { allowGuardianDeparture = true } = 
     player.guardian = null;
     game.logs.unshift(`${player.name}の${guardianName}は、ダメージに驚いて去りました。`);
   }
-  if (player.hp <= 0 && hasPassiveCard(player, "太陽のお守り")) {
-    const charm = player.hand.find(card => (card.sourceName || card.name) === "太陽のお守り");
-    removeCardFromHand(player, charm.uid);
-    player.hp = 10;
-    game.logs.unshift(`${player.name}は太陽のお守りによりHP10で復活しました。`);
-  }
+  triggerSunCharm(game, player);
   return damage;
 }
 
@@ -230,6 +239,11 @@ function selectAttackCard(game, uid) {
   if (!card) return;
   game.focusedCard = card;
 
+  if (isPassiveHandCard(card)) {
+    game.logs.unshift(`「${card.name}」はHPが0になった時に自動発動するため、通常使用できません。`);
+    return;
+  }
+
   if (game.phase === "target" && uid === game.selectedAttackUid) {
     cancelSelection(game);
     return;
@@ -346,14 +360,18 @@ function utilityTargetIsAllowed(game, card, targetId) {
 }
 
 function cancelSelection(game) {
-  if (game.busy || !["target", "utility_target", "sell_card", "sell_target", "buy_target", "buy_offer", "exchange"].includes(game.phase)) return;
+  if (game.busy || !["target", "utility_target", "sell_card", "sell_target", "buy_target", "buy_offer", "exchange"].includes(game.phase)) return false;
+  const actor = getActor(game);
+  const selectedCardUid = game.pendingTrade?.tradeCardUid || game.selectedUtilityUid || game.selectedAttackUid;
   game.selectedAttackUid = null;
   game.selectedAttackCard = null;
   game.selectedAttackEnhancementUids = [];
   game.selectedUtilityUid = null;
   game.pendingTrade = null;
   game.phase = "attack";
+  game.focusedCard = actor.hand.find(card => card.uid === selectedCardUid) || game.focusedCard;
   game.logs.unshift("選択を解除しました。");
+  return true;
 }
 
 function chooseActionTarget(game, targetId) {
@@ -817,6 +835,10 @@ function useUtilityAndEndTurn(game, uid, targetId) {
   const learnedMagic = actor.learnedMagics.find(card => card.uid === uid);
   const original = actor.hand.find(card => card.uid === uid) || learnedMagic;
   if (!original) return false;
+  if (isPassiveHandCard(original)) {
+    game.logs.unshift(`「${original.name}」はHPが0になった時に自動発動します。`);
+    return false;
+  }
 
   if (original.type === "item" && ["sell", "buy", "exchange"].includes(original.effect)) {
     if (actor.isCpu) return executeCpuTrade(game, uid);
@@ -1561,22 +1583,19 @@ function processEndOfTurnStatuses(game, player) {
 
 function checkWinner(game) {
   [game.player, game.enemy].forEach((player, index) => {
-    if (player.hp <= 0 && hasPassiveCard(player, "太陽のお守り")) {
-      const charm = player.hand.find(card => (card.sourceName || card.name) === "太陽のお守り");
-      removeCardFromHand(player, charm.uid);
-      player.hp = 10;
-      game.logs.unshift(`${player.name}は太陽のお守りで復活しました。`);
-    }
+    triggerSunCharm(game, player);
     if (player.hp <= 0) {
       const bow = player.hand.find(card => (card.sourceName || card.name) === "昇天弓");
       if (bow) {
         removeCardFromHand(player, bow.uid);
         const opponent = index === 0 ? game.enemy : game.player;
-        if (Math.random() < 0.75) {
-          damagePlayer(game, opponent, 30);
-          game.logs.unshift(`${player.name}の昇天弓が自動発動し、${opponent.name}に30ダメージを与えました。`);
+        const chance = Number(bow.ascensionHitChance || 75);
+        const attack = Number(bow.ascensionAttack || 30);
+        if (Math.random() * 100 < chance) {
+          damagePlayer(game, opponent, attack);
+          game.logs.unshift(`${player.name}の昇天弓が昇天時に自動発動し、${opponent.name}に${attack}ダメージを与えました。`);
         } else {
-          game.logs.unshift(`${player.name}の昇天弓は外れました。`);
+          game.logs.unshift(`${player.name}の昇天弓が昇天時に自動発動しましたが、外れました。`);
         }
       }
     }

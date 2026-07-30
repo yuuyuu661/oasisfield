@@ -2058,3 +2058,70 @@ button:disabled {
     font-size: 9px;
   }
 }
+
+/* 攻撃・防御の合計値は、それぞれのカード場の直下に大きく表示する。 */
+.combat-flow {
+  height: 268px;
+}
+
+.combat-side {
+  display: flex;
+  flex-direction: column;
+}
+
+.combat-total {
+  min-height: 42px;
+  display: grid;
+  place-items: center;
+  margin-top: 6px;
+  border: 3px solid currentColor;
+  border-radius: 11px;
+  background: rgba(238, 255, 218, .94);
+  font-size: 25px;
+  line-height: 1;
+  font-weight: 1000;
+  letter-spacing: .04em;
+}
+
+.attack-total {
+  color: #a84700;
+}
+
+.defense-total {
+  color: #176f9b;
+}
+
+.trade-cancel-btn {
+  min-width: 150px;
+  min-height: 48px;
+  border: 2px solid rgba(6, 59, 44, .3);
+  background: rgba(255, 255, 255, .82);
+  font-size: 17px;
+  touch-action: manipulation;
+}
+
+@media (max-width: 1050px) {
+  .combat-flow {
+    height: 252px;
+  }
+}
+
+@media (max-width: 680px) {
+  .combat-flow {
+    height: 232px;
+  }
+
+  .combat-total {
+    min-height: 32px;
+    margin-top: 3px;
+    border-width: 2px;
+    border-radius: 6px;
+    font-size: 17px;
+  }
+
+  .trade-cancel-btn {
+    min-width: 0;
+    min-height: 44px;
+    font-size: 16px;
+  }
+}

@@ -133,6 +133,7 @@ ensureCompactPlayerPanel("player", "あなた");
 const els = {
   restartBtn: document.getElementById("restartBtn"),
   prayBtn: document.getElementById("prayBtn"),
+  cancelTradeBtn: document.getElementById("cancelTradeBtn"),
 
   enemyPanel: document.getElementById("enemyPanel"),
   playerPanel: document.getElementById("playerPanel"),
@@ -148,7 +149,8 @@ const els = {
   arenaDefenderName: document.getElementById("arenaDefenderName"),
   arenaAttackCard: document.getElementById("arenaAttackCard"),
   arenaDefenseCards: document.getElementById("arenaDefenseCards"),
-  calcView: document.getElementById("calcView"),
+  attackTotal: document.getElementById("attackTotal"),
+  defenseTotal: document.getElementById("defenseTotal"),
   damageView: document.getElementById("damageView"),
 
   playerHpText: document.getElementById("playerHpText"),
@@ -288,8 +290,13 @@ function renderPhase() {
     && !game.busy
     && utilityTargetIsAllowed(game, selectedUtility, "player");
   const canPray = canAttack && !playerHasWeapon(game.player);
+  const canCancelTrade = ["sell_card", "sell_target", "buy_target", "buy_offer", "exchange"].includes(game.phase)
+    && game.turn === "player"
+    && !game.busy
+    && !game.winner;
 
   els.prayBtn.disabled = !canPray;
+  els.cancelTradeBtn.classList.toggle("hidden", !canCancelTrade);
   els.enemyPanel.classList.toggle("target-highlight", needsEnemyTarget);
   els.playerPanel.classList.toggle("target-highlight", canTargetSelf || canDefense);
   setStatusBarTargetState(els.enemyPanel, needsEnemyTarget);
@@ -395,7 +402,8 @@ function renderArena() {
     els.arenaDefenseCards.className = "combat-card-list empty";
     els.arenaDefenseCards.style.setProperty("--card-count", 1);
     els.arenaDefenseCards.textContent = "防御カードなし";
-    els.calcView.textContent = "攻撃 0 - 防御 0 = 0";
+    els.attackTotal.textContent = "攻 0";
+    els.defenseTotal.textContent = "守 0";
     els.damageView.textContent = "待機中";
     els.damageView.dataset.element = "none";
     clearImpactEffect();
@@ -419,12 +427,11 @@ function renderArena() {
     els.arenaDefenseCards.innerHTML = battle.defenseCards.map(card => bigCardHtml(card)).join("");
   }
 
-  const perHit = Math.max(0, (battle.attack || 0) - (battle.defense || 0));
-  const result = perHit * Math.max(1, battle.hitCount || 1);
   els.damageView.dataset.element = battle.element || battle.attackCard?.element || "none";
-  els.calcView.textContent = battle.hitCount > 1
-    ? `(${battle.attack || 0} - 防御 ${battle.defense || 0}) × ${battle.hitCount}回 = ${result}`
-    : `攻撃 ${battle.attack || 0} - 防御 ${battle.defense || 0} = ${result}`;
+  els.attackTotal.textContent = battle.hitCount > 1
+    ? `攻 ${battle.attack || 0} × ${battle.hitCount}回`
+    : `攻 ${battle.attack || 0}`;
+  els.defenseTotal.textContent = `守 ${battle.defense || 0}`;
 
   if (battle.damage === null) {
     els.damageView.textContent = "待機中";
@@ -488,12 +495,14 @@ function renderHand() {
       || !game.selectedAttackCard
       || isAdditionalAttackCard(game.selectedAttackCard)
       || attackCardAllowsEnhancements(game.selectedAttackCard);
-    const usableAsAttack = (
-      canChooseTurnCards
-      && canAddToSelectedAttack
-      && (card.type === "weapon" || card.effect === "attack_defense" || isAdditionalAttackCard(card))
-    ) || (
-      canChooseTurnCards && (card.type === "item" || card.type === "magic")
+    const usableAsAttack = !isPassiveHandCard(card) && (
+      (
+        canChooseTurnCards
+        && canAddToSelectedAttack
+        && (card.type === "weapon" || card.effect === "attack_defense" || isAdditionalAttackCard(card))
+      ) || (
+        canChooseTurnCards && (card.type === "item" || card.type === "magic")
+      )
     );
 
     const usableAsDefense = canDefense && canUseDefenseCard(game, card);
@@ -873,6 +882,10 @@ els.prayBtn?.addEventListener("click", () => {
   if (game.phase !== "attack" || game.turn !== "player" || game.winner || game.busy) return;
   prayAndEndTurn(game, game.player);
   renderGame();
+});
+
+els.cancelTradeBtn?.addEventListener("click", () => {
+  if (cancelSelection(game)) renderGame();
 });
 
 function confirmPlayerDefense() {
