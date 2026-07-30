@@ -109,6 +109,36 @@ const supportAttack = evaluate(`(() => {
 })()`);
 assert.deepEqual(supportAttack, { attack: 20, mp: 4, supports: 1 });
 
+assert.deepEqual(
+  evaluate(`(() => {
+    const game = {
+      phase: "target", turn: "player", attackerId: "player", defenderId: "enemy",
+      player: createPlayer("P"), enemy: createPlayer("E", true), logs: [],
+      selectedAttackUid: "w", selectedAttackCard: null,
+      selectedAttackEnhancementUids: [], selectedAttackMagicUids: [],
+      selectedAttackSupportUids: [], selectedUtilityUid: null,
+      pendingAttack: null, pendingTrade: null, lastBattle: null, hitResult: null,
+      dreamMasks: {}, winner: null, busy: false
+    };
+    const weapon = { uid: "w", id: "w", name: "剣", sourceName: "剣", type: "weapon",
+      effect: "attack", attack: 10, element: "none", effectChance: 100 };
+    game.player.hand = [weapon];
+    const started = startAttack(game, "w", "player");
+    return {
+      started,
+      hand: game.player.hand.length,
+      pending: game.pendingAttack,
+      message: game.logs[0]
+    };
+  })()`),
+  {
+    started: false,
+    hand: 1,
+    pending: null,
+    message: "自分を攻撃対象には選べません。"
+  }
+);
+
 const darkRevive = evaluate(`(() => {
   const game = {
     phase: "defense", turn: "player", attackerId: "player", defenderId: "enemy",

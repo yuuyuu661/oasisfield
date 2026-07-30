@@ -214,6 +214,91 @@ class OasisFieldRulesTest(unittest.TestCase):
         self.assertIsNone(self.game["pending_attack"])
         self.assertIsNone(self.game["battle"])
 
+    def test_normal_attack_rejects_self_target_without_consuming_card(self):
+        actor = self.make_actor()
+        weapon = next(
+            card(item["sourceName"])
+            for item in rules.CATALOG
+            if item["type"] == "weapon"
+            and item.get("effect") not in {"random_target", "all_attack"}
+            and not item.get("isAllAttack")
+            and item.get("target") != "all_enemies"
+        )
+        actor["hand"] = [weapon]
+
+        with self.assertRaisesRegex(rules.OasisRuleError, "自分を攻撃対象"):
+            rules.apply_action(
+                self.game,
+                actor["user_id"],
+                {
+                    "action": "play",
+                    "card_uid": weapon["uid"],
+                    "target_id": actor["user_id"],
+                },
+            )
+
+        self.assertEqual(self.game["phase"], "turn")
+        self.assertEqual(actor["hand"][0]["uid"], weapon["uid"])
+
+    def test_random_target_attack_can_randomly_hit_its_user(self):
+        actor = self.make_actor()
+        random_weapon = next(
+            rules._copy_card(item)
+            for item in rules.CATALOG
+            if item.get("effect") == "random_target"
+        )
+        actor["hand"] = [random_weapon]
+
+        with (
+            patch("oasisfield_logic.random.choice", return_value=actor["user_id"]),
+            patch("oasisfield_logic._hit", return_value=True),
+            patch("oasisfield_logic._defend"),
+        ):
+            rules.apply_action(
+                self.game,
+                actor["user_id"],
+                {
+                    "action": "play",
+                    "card_uid": random_weapon["uid"],
+                    "target_id": actor["user_id"],
+                },
+            )
+
+        self.assertEqual(
+            self.game["pending_attack"]["target_id"],
+            actor["user_id"],
+        )
+
+    def test_all_attack_excludes_its_user(self):
+        actor = self.make_actor()
+        all_attack = next(
+            rules._copy_card(item)
+            for item in rules.CATALOG
+            if item["type"] == "weapon"
+            and (
+                item.get("isAllAttack")
+                or item.get("target") == "all_enemies"
+                or item.get("effect") == "all_attack"
+            )
+        )
+        actor["hand"] = [all_attack]
+
+        with patch("oasisfield_logic._hit", return_value=True):
+            rules.apply_action(
+                self.game,
+                actor["user_id"],
+                {
+                    "action": "play",
+                    "card_uid": all_attack["uid"],
+                    "target_id": actor["user_id"],
+                },
+            )
+
+        self.assertNotIn(
+            actor["user_id"],
+            self.game["pending_attack"]["targets"],
+        )
+
     def test_rainbow_curtain_allows_any_defense_element(self):
         actor = self.make_actor()
         defender = rules.find_player(self.game, "2")

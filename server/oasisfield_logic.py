@@ -547,6 +547,18 @@ def _begin_attack(
     )
     if not can_attack:
         raise OasisRuleError("そのカードでは攻撃できません")
+    all_attack = bool(
+        primary_card.get("isAllAttack")
+        or primary_card.get("target") == "all_enemies"
+        or primary_card.get("effect") in {"all_attack", "magic_all_attack"}
+    )
+    if (
+        target_id is not None
+        and str(target_id) == actor["user_id"]
+        and primary_card.get("effect") != "random_target"
+        and not all_attack
+    ):
+        raise OasisRuleError("自分を攻撃対象には選べません")
     supports, mp_cost = _support_sequence(actor, primary_card, support_uids)
     primary, primary_learned = _consume(actor, primary_uid)
     primary = primary if primary_learned else _transform_dream(primary, actor)

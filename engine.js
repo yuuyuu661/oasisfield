@@ -696,6 +696,20 @@ function canUseDefenseCard(game, card) {
 function startAttack(game, uid, defenderId, { allowSelfDefense = false } = {}) {
   if (game.busy || game.winner || game.phase !== "target") return false;
   const attacker = getActor(game);
+  const selectedCard = attacker.hand.find(card => card.uid === uid);
+  const selectedIsAllAttack = Boolean(
+    selectedCard?.isAllAttack
+    || selectedCard?.target === "all_enemies"
+    || ["all_attack", "magic_all_attack"].includes(selectedCard?.effect)
+  );
+  if (
+    defenderId === game.attackerId
+    && selectedCard?.effect !== "random_target"
+    && !selectedIsAllAttack
+  ) {
+    game.logs.unshift("自分を攻撃対象には選べません。");
+    return false;
+  }
   const playedCard = removeCardFromHand(attacker, uid);
   const playedAsAdditional = isAdditionalAttackCard(playedCard);
   if (!playedCard || (playedCard.type !== "weapon" && playedCard.effect !== "attack_defense" && !playedAsAdditional)) return false;
