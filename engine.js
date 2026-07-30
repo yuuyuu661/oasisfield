@@ -667,16 +667,16 @@ function selectedRainbowCurtain(game) {
 function canUseDefenseCard(game, card) {
   if (!isDefenseCard(card) || !game.pendingAttack?.hit) return false;
   const attackElement = game.pendingAttack.element || game.pendingAttack.card?.element || "none";
+  const isMagicSpecial = (
+    ["reflect_magic", "nullify_magic"].includes(card.effect)
+    || ["reflect_magic", "nullify_magic"].includes(card.secondaryEffect)
+  );
+  const hasBaseDefense = card.type === "armor" || Number(card.defense || 0) > 0;
   if (card.effect === "wall_defense") {
     return !game.pendingAttack.isMagic && attackElement === "none";
   }
   if (game.pendingAttack.isMagic) {
-    const isMagicSpecial = (
-      ["reflect_magic", "nullify_magic"].includes(card.effect)
-      || ["reflect_magic", "nullify_magic"].includes(card.secondaryEffect)
-      || (card.sourceName || card.name) === "スーパーミラー"
-    );
-    if (isMagicSpecial) return true;
+    if (isMagicSpecial || (card.sourceName || card.name) === "スーパーミラー") return true;
     if (Number(game.pendingAttack.attack || 0) <= 0) return false;
     if (card.effect === "reflect_normal") return false;
   }
@@ -685,6 +685,7 @@ function canUseDefenseCard(game, card) {
     return (card.sourceName || card.name) === "スーパーミラー" || attackElement === "none";
   }
   if (["reflect_magic", "nullify_magic"].includes(card.effect)) return false;
+  if (isMagicSpecial && !hasBaseDefense) return false;
   if (card.effect === "element_change") return attackElement !== "none";
   if (defenseElementCanBlock(attackElement, card.element)) return true;
   if (getDefender(game).statuses.includes("flash")) return false;

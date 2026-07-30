@@ -154,6 +154,306 @@ class OasisFieldRulesTest(unittest.TestCase):
                 [defender["hand"][0]["uid"], defender["hand"][1]["uid"]],
             )
 
+    def test_non_defense_card_is_rejected_without_consuming_it(self):
+        actor = self.make_actor()
+        defender = rules.find_player(self.game, "2")
+        weapon = next(
+            candidate
+            for candidate in rules.CATALOG
+            if candidate["type"] == "weapon"
+            and candidate.get("element") == "none"
+            and not candidate.get("isAllAttack")
+        )
+        healing_item = next(
+            candidate
+            for candidate in rules.CATALOG
+            if candidate["type"] == "item"
+            and candidate.get("effect") == "heal_hp"
+        )
+        actor["hand"] = [rules._copy_card(weapon)]
+        defender["hand"] = [rules._copy_card(healing_item)]
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {
+                "action": "play",
+                "card_uid": actor["hand"][0]["uid"],
+                "target_id": defender["user_id"],
+            },
+        )
+        item_uid = defender["hand"][0]["uid"]
+        with self.assertRaises(rules.OasisRuleError):
+            rules.apply_action(
+                self.game,
+                defender["user_id"],
+                {"action": "defend", "defense_uids": [item_uid]},
+            )
+        self.assertTrue(any(card["uid"] == item_uid for card in defender["hand"]))
+        self.assertEqual(self.game["phase"], "defense")
+
+    def test_missed_all_attack_advances_without_defense_input(self):
+        actor = self.make_actor()
+        attack = next(
+            candidate
+            for candidate in rules.CATALOG
+            if candidate["type"] == "weapon"
+            and candidate.get("isAllAttack")
+            and int(candidate.get("effectChance", 100)) < 100
+        )
+        actor["hand"] = [rules._copy_card(attack)]
+        with patch("oasisfield_logic.random.randrange", return_value=99):
+            rules.apply_action(
+                self.game,
+                actor["user_id"],
+                {
+                    "action": "play",
+                    "card_uid": actor["hand"][0]["uid"],
+                },
+            )
+        self.assertEqual(self.game["phase"], "turn")
+        self.assertIsNone(self.game["pending_attack"])
+        self.assertIsNone(self.game["battle"])
+
+    def test_rainbow_curtain_allows_any_defense_element(self):
+        actor = self.make_actor()
+        defender = rules.find_player(self.game, "2")
+        fire_weapon = next(
+            candidate
+            for candidate in rules.CATALOG
+            if candidate["type"] == "weapon"
+            and candidate.get("element") == "fire"
+            and not candidate.get("isAllAttack")
+        )
+        rainbow = next(
+            candidate
+            for candidate in rules.CATALOG
+            if candidate.get("effect") == "element_change"
+        )
+        fire_armor = next(
+            candidate
+            for candidate in rules.CATALOG
+            if candidate["type"] == "armor"
+            and candidate.get("element") == "fire"
+            and int(candidate.get("defense", 0)) > 0
+        )
+        actor["hand"] = [rules._copy_card(fire_weapon)]
+        defender["hand"] = [
+            rules._copy_card(rainbow),
+            rules._copy_card(fire_armor),
+        ]
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {
+                "action": "play",
+                "card_uid": actor["hand"][0]["uid"],
+                "target_id": defender["user_id"],
+            },
+        )
+        defense_uids = [card["uid"] for card in defender["hand"]]
+        rules.apply_action(
+            self.game,
+            defender["user_id"],
+            {"action": "defend", "defense_uids": defense_uids},
+        )
+        self.assertEqual(defender["hp"], 40)
+        self.assertTrue(
+            all(
+                card["uid"] not in defense_uids
+                for card in defender["hand"]
+            )
+        )
+
+    def test_rainbow_curtain_removes_dark_instant_defeat(self):
+        actor = self.make_actor()
+        defender = rules.find_player(self.game, "2")
+        dark_weapon = next(
+            candidate
+            for candidate in rules.CATALOG
+            if candidate["type"] == "weapon"
+            and candidate.get("element") == "dark"
+            and candidate.get("effect") == "attack"
+            and not candidate.get("isAllAttack")
+        )
+        rainbow = next(
+            candidate
+            for candidate in rules.CATALOG
+            if candidate.get("effect") == "element_change"
+        )
+        actor["hand"] = [rules._copy_card(dark_weapon)]
+        defender["hand"] = [rules._copy_card(rainbow)]
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {
+                "action": "play",
+                "card_uid": actor["hand"][0]["uid"],
+                "target_id": defender["user_id"],
+            },
+        )
+        rules.apply_action(
+            self.game,
+            defender["user_id"],
+            {
+                "action": "defend",
+                "defense_uids": [defender["hand"][0]["uid"]],
+            },
+        )
+        self.assertEqual(defender["hp"], 40 - int(dark_weapon["attack"]))
+        self.assertTrue(defender["alive"])
+
+    def test_flash_allows_one_compatible_element_defense(self):
+        actor = self.make_actor()
+        defender = rules.find_player(self.game, "2")
+        defender["statuses"] = ["flash"]
+        fire_weapon = next(
+            candidate
+            for candidate in rules.CATALOG
+            if candidate["type"] == "weapon"
+            and candidate.get("element") == "fire"
+            and not candidate.get("isAllAttack")
+        )
+        water_armor = next(
+            candidate
+            for candidate in rules.CATALOG
+            if candidate["type"] == "armor"
+            and candidate.get("element") == "water"
+            and int(candidate.get("defense", 0)) > 0
+        )
+        actor["hand"] = [rules._copy_card(fire_weapon)]
+        defender["hand"] = [rules._copy_card(water_armor)]
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {
+                "action": "play",
+                "card_uid": actor["hand"][0]["uid"],
+                "target_id": defender["user_id"],
+            },
+        )
+        rules.apply_action(
+            self.game,
+            defender["user_id"],
+            {
+                "action": "defend",
+                "defense_uids": [defender["hand"][0]["uid"]],
+            },
+        )
+        self.assertEqual(defender["hp"], 40)
+
+    def test_super_mirror_reflects_elemental_attack_without_reroll(self):
+        actor = self.make_actor()
+        defender = rules.find_player(self.game, "2")
+        fire_weapon = next(
+            candidate
+            for candidate in rules.CATALOG
+            if candidate["type"] == "weapon"
+            and candidate.get("element") == "fire"
+            and not candidate.get("isAllAttack")
+        )
+        super_mirror = next(
+            candidate
+            for candidate in rules.CATALOG
+            if candidate["type"] == "armor"
+            and candidate.get("effect") == "reflect_normal"
+        )
+        actor["hand"] = [
+            rules._copy_card(fire_weapon),
+            rules._copy_card(super_mirror),
+        ]
+        defender["hand"] = [rules._copy_card(super_mirror)]
+        with patch("oasisfield_logic._hit", return_value=True) as hit:
+            rules.apply_action(
+                self.game,
+                actor["user_id"],
+                {
+                    "action": "play",
+                    "card_uid": actor["hand"][0]["uid"],
+                    "target_id": defender["user_id"],
+                },
+            )
+            rules.apply_action(
+                self.game,
+                defender["user_id"],
+                {
+                    "action": "defend",
+                    "defense_uids": [defender["hand"][0]["uid"]],
+                },
+            )
+            actor_mirror = next(
+                card
+                for card in actor["hand"]
+                if card.get("effect") == "reflect_normal"
+            )
+            rules.apply_action(
+                self.game,
+                actor["user_id"],
+                {
+                    "action": "defend",
+                    "defense_uids": [actor_mirror["uid"]],
+                },
+            )
+            self.assertEqual(hit.call_count, 1)
+        self.assertEqual(self.game["phase"], "defense")
+        self.assertTrue(self.game["pending_attack"]["hit"])
+        self.assertEqual(self.game["pending_attack"]["target_id"], defender["user_id"])
+        self.assertEqual(self.game["pending_attack"]["chain"], 2)
+
+    def test_bounced_attack_can_be_bounced_again(self):
+        actor = self.make_actor()
+        first_defender = rules.find_player(self.game, "2")
+        second_defender = rules.find_player(self.game, "3")
+        weapon = next(
+            candidate
+            for candidate in rules.CATALOG
+            if candidate["type"] == "weapon"
+            and candidate.get("element") == "none"
+            and not candidate.get("isAllAttack")
+            and candidate.get("effect") == "attack"
+        )
+        bounce = next(
+            candidate
+            for candidate in rules.CATALOG
+            if candidate["type"] == "weapon"
+            and candidate.get("effect") == "reflect_normal"
+            and candidate.get("reflectionMode") == "bounce"
+        )
+        actor["hand"] = [rules._copy_card(weapon)]
+        first_defender["hand"] = [rules._copy_card(bounce)]
+        second_defender["hand"] = [rules._copy_card(bounce)]
+        rules.apply_action(
+            self.game,
+            actor["user_id"],
+            {
+                "action": "play",
+                "card_uid": actor["hand"][0]["uid"],
+                "target_id": first_defender["user_id"],
+            },
+        )
+        with patch(
+            "oasisfield_logic.random.choice",
+            side_effect=[second_defender["user_id"], actor["user_id"]],
+        ):
+            rules.apply_action(
+                self.game,
+                first_defender["user_id"],
+                {
+                    "action": "defend",
+                    "defense_uids": [first_defender["hand"][0]["uid"]],
+                },
+            )
+            rules.apply_action(
+                self.game,
+                second_defender["user_id"],
+                {
+                    "action": "defend",
+                    "defense_uids": [second_defender["hand"][0]["uid"]],
+                },
+            )
+        self.assertEqual(self.game["phase"], "defense")
+        self.assertEqual(self.game["pending_attack"]["target_id"], actor["user_id"])
+        self.assertEqual(self.game["pending_attack"]["chain"], 2)
+
     def test_sun_charm_then_ascension_bow(self):
         player = rules.find_player(self.game, "2")
         player["hand"] = [card("太陽のお守り")]

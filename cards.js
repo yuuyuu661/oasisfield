@@ -219,13 +219,15 @@ function isAdditionalAttackCard(card) {
 }
 
 function isDefenseCard(card) {
+  const hasDefensiveEffect = card && (
+    ["reflect_normal", "reflect_magic", "nullify_magic", "wall_defense", "element_change"].includes(card.effect) ||
+    ["reflect_magic", "nullify_magic"].includes(card.secondaryEffect)
+  );
   return card && (
     card.type === "armor" ||
-    card.type === "enchant" ||
     Number(card.defense || 0) > 0 ||
-    ["reflect_normal", "reflect_magic", "nullify_magic", "wall_defense"].includes(card.effect) ||
-    ["reflect_magic", "nullify_magic"].includes(card.secondaryEffect)
-  ) && !isAdditionalAttackCard(card);
+    hasDefensiveEffect
+  );
 }
 
 function isHealingCard(card) {

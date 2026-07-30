@@ -23,6 +23,14 @@ DISEASE_CHAIN = ("cold", "fever", "hell", "heaven")
 ATTACK_SUPPORT_EFFECTS = {"add_magic_attack", "double_attack", "sure_all_attack"}
 REACTIVE_MAGIC_EFFECTS = {"reflect_magic", "wall_defense"}
 SPECIAL_EFFECTS = {"sell", "buy", "exchange"}
+DEFENSIVE_EFFECTS = {
+    "reflect_normal",
+    "reflect_magic",
+    "nullify_magic",
+    "wall_defense",
+    "element_change",
+}
+DEFENSIVE_SECONDARY_EFFECTS = {"reflect_magic", "nullify_magic"}
 DEMON_NAMES = ("小悪魔", "中悪魔", "大悪魔", "イタズラマン", "めぐみの妖精")
 DEMON_WEIGHTS = (7, 5, 3, 5, 5)
 ELEMENT_BLOCKS = {
@@ -584,6 +592,7 @@ def _begin_attack(
         "attack": attack,
         "hit_count": hit_count,
         "element": "none" if sure_all else _elements(cards),
+        "base_element": "none" if sure_all else _elements(cards),
         "is_magic": primary["type"] == "magic",
         "draw_counts": {actor["user_id"]: draw_count},
         "chain": 0,
@@ -598,13 +607,14 @@ def _begin_attack(
     _prepare_defense(game)
 
 
-def _prepare_defense(game: dict[str, Any]) -> None:
+def _prepare_defense(game: dict[str, Any], *, roll_hit: bool = True) -> None:
     pending = game["pending_attack"]
     defender = find_player(game, pending["target_id"])
     if not defender or not defender["alive"]:
         _advance_attack_queue(game)
         return
-    pending["hit"] = _hit(pending["primary"], defender)
+    if roll_hit:
+        pending["hit"] = _hit(pending["primary"], defender)
     game["phase"] = "defense"
     game["battle"] = {
         "attacker_id": pending["attacker_id"],
@@ -617,28 +627,67 @@ def _prepare_defense(game: dict[str, Any]) -> None:
         "element": pending["element"],
         "hit": pending["hit"],
     }
+    if not pending["hit"]:
+        game["logs"].insert(0, f'{pending["primary"]["name"]}は{defender["user_name"]}に外れました。')
+        _advance_attack_queue(game)
+        return
     if defender["user_id"] == pending["attacker_id"]:
         _defend(game, defender, [])
         return
-    if not pending["hit"]:
-        game["logs"].insert(0, f'{pending["primary"]["name"]}は{defender["user_name"]}に外れました。')
 
 
-def _can_block(card: dict[str, Any], pending: dict[str, Any], flash: bool) -> bool:
-    element = pending.get("element", "none")
+def _is_defense_card(card: dict[str, Any] | None) -> bool:
+    if not card:
+        return False
+    return bool(
+        card.get("type") == "armor"
+        or int(card.get("defense", 0)) > 0
+        or card.get("effect") in DEFENSIVE_EFFECTS
+        or card.get("secondaryEffect") in DEFENSIVE_SECONDARY_EFFECTS
+    )
+
+
+def _can_block(
+    card: dict[str, Any],
+    pending: dict[str, Any],
+    flash: bool = False,
+    rainbow_active: bool = False,
+) -> bool:
+    del flash
+    if not pending.get("hit", True) or not _is_defense_card(card):
+        return False
+    original_element = pending.get("element", "none")
     effect = card.get("effect")
     secondary = card.get("secondaryEffect")
-    if effect == "wall_defense":
-        return not pending["is_magic"] and element == "none"
-    if pending["is_magic"] and (effect in {"reflect_magic", "nullify_magic"} or secondary in {"reflect_magic", "nullify_magic"}):
+    source_name = card.get("sourceName", card.get("name"))
+    is_magic = bool(pending.get("is_magic"))
+    has_base_defense = card.get("type") == "armor" or int(card.get("defense", 0)) > 0
+    magic_special = (
+        effect in {"reflect_magic", "nullify_magic"}
+        or secondary in {"reflect_magic", "nullify_magic"}
+    )
+    if source_name == "スーパーミラー":
         return True
-    if effect == "reflect_normal":
-        return not pending["is_magic"] and element == "none"
     if effect == "element_change":
-        return element != "none"
+        return original_element != "none"
+    element = (
+        "none"
+        if rainbow_active and original_element != "none"
+        else original_element
+    )
+    if effect == "wall_defense":
+        return not is_magic and element == "none"
+    if is_magic and magic_special:
+        return True
+    if is_magic and int(pending.get("attack", 0)) <= 0:
+        return False
+    if effect == "reflect_normal":
+        return not is_magic and element == "none"
+    if magic_special and not has_base_defense:
+        return False
     if element in {"none", "dark"}:
         return True
-    if element == "light" or flash:
+    if element == "light":
         return False
     return card.get("element", "none") in ELEMENT_BLOCKS.get(element, set())
 
@@ -654,14 +703,21 @@ def _defend(game: dict[str, Any], player: dict[str, Any], defense_uids: list[str
         card = _card(player, uid)
         if not card:
             raise OasisRuleError("防御カードが見つかりません")
+        cards.append(card)
+    rainbow_active = any(card.get("effect") == "element_change" for card in cards)
+    for index, card in enumerate(cards):
         spirit_for_previous_magic = (
             card.get("effect") == "mp_free_magic"
-            and bool(cards)
-            and cards[-1]["type"] == "magic"
+            and index > 0
+            and cards[index - 1]["type"] == "magic"
         )
-        if not spirit_for_previous_magic and not _can_block(card, pending, "flash" in player["statuses"]):
+        if not spirit_for_previous_magic and not _can_block(
+            card,
+            pending,
+            "flash" in player["statuses"],
+            rainbow_active,
+        ):
             raise OasisRuleError(f'「{card["name"]}」ではこの攻撃を防げません')
-        cards.append(card)
     for index, card in enumerate(cards):
         if card.get("effect") == "mp_free_magic":
             if index == 0 or cards[index - 1]["type"] != "magic":
@@ -690,7 +746,25 @@ def _defend(game: dict[str, Any], player: dict[str, Any], defense_uids: list[str
             _learn(player, used)
     pending["draw_counts"][player["user_id"]] = pending["draw_counts"].get(player["user_id"], 0) + draw_count
 
-    usable = [card for card in used_cards if _can_block(card, pending, "flash" in player["statuses"])]
+    resolved_rainbow = any(
+        card.get("effect") == "element_change"
+        for card in used_cards
+    )
+    resolved_element = (
+        "none"
+        if resolved_rainbow and pending.get("element", "none") != "none"
+        else pending.get("element", "none")
+    )
+    usable = [
+        card
+        for card in used_cards
+        if _can_block(
+            card,
+            pending,
+            "flash" in player["statuses"],
+            resolved_rainbow,
+        )
+    ]
     reflector = next(
         (
             card
@@ -717,7 +791,7 @@ def _defend(game: dict[str, Any], player: dict[str, Any], defense_uids: list[str
     actual = _damage(game, player, damage)
     primary = pending["primary"]
     if pending["hit"] and actual > 0:
-        if primary.get("effect") == "instant_defeat" or pending["element"] == "dark":
+        if primary.get("effect") == "instant_defeat" or resolved_element == "dark":
             _damage(game, player, player["hp"])
         owner = find_player(game, pending["owner_id"])
         if primary.get("effect") == "hp_drain" and owner:
@@ -754,6 +828,7 @@ def _defend(game: dict[str, Any], player: dict[str, Any], defense_uids: list[str
             "defense": defense_total,
             "damage": actual,
             "blocked": pending["hit"] and actual == 0,
+            "element": resolved_element,
         }
     )
     if reflector:
@@ -765,11 +840,12 @@ def _defend(game: dict[str, Any], player: dict[str, Any], defense_uids: list[str
             raise OasisRuleError("反射連鎖が長すぎるため攻撃を終了しました")
         pending["attacker_id"] = player["user_id"]
         pending["target_id"] = target_id
+        pending["element"] = resolved_element
         game["logs"].insert(0, f'{player["user_name"]}が攻撃を{"弾き" if mode == "bounce" else "反射し"}ました。')
         if target_id == player["user_id"]:
             _defend(game, player, [])
         else:
-            _prepare_defense(game)
+            _prepare_defense(game, roll_hit=False)
         return
     _advance_attack_queue(game)
 
@@ -780,6 +856,7 @@ def _advance_attack_queue(game: dict[str, Any]) -> None:
     if pending["target_index"] < len(pending["targets"]):
         pending["attacker_id"] = pending["owner_id"]
         pending["target_id"] = pending["targets"][pending["target_index"]]
+        pending["element"] = pending.get("base_element", pending["element"])
         _prepare_defense(game)
         return
     for user_id, count in pending["draw_counts"].items():
@@ -974,6 +1051,7 @@ def _guardian_begin_attack(
         "attack": int(action.get("attack", 0)),
         "hit_count": 1,
         "element": card["element"],
+        "base_element": card["element"],
         "is_magic": is_magic,
         "draw_counts": {},
         "chain": 0,

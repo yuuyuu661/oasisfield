@@ -29,6 +29,18 @@ function evaluate(source) {
 assert.equal(evaluate('defenseElementCanBlock("fire", "water")'), true);
 assert.equal(evaluate('defenseElementCanBlock("light", "water")'), false);
 assert.equal(evaluate('defenseElementCanBlock("dark", "none")'), true);
+assert.equal(
+  evaluate('isDefenseCard({ type: "item", effect: "heal_hp", defense: 0 })'),
+  false
+);
+assert.equal(
+  evaluate('isDefenseCard({ type: "enchant", effect: "add_attack", defense: 0 })'),
+  false
+);
+assert.equal(
+  evaluate('isDefenseCard({ type: "enchant", effect: "add_attack", defense: 0, secondaryEffect: "reflect_magic" })'),
+  true
+);
 assert.equal(evaluate('attackCardAllowsEnhancements({ effect: "all_attack" })'), false);
 assert.equal(
   evaluate(`playerHasWeapon({
@@ -43,6 +55,24 @@ assert.equal(evaluate(`(() => {
   };
   return canUseDefenseCard(game, { type: "armor", effect: "defense", defense: 2, element: "water" });
 })()`), true);
+assert.deepEqual(
+  evaluate(`(() => {
+    const card = {
+      type: "enchant", effect: "add_attack", defense: 0,
+      secondaryEffect: "reflect_magic", element: "none"
+    };
+    const enemy = createPlayer("E");
+    const game = {
+      defenderId: "enemy", enemy,
+      pendingAttack: { hit: true, isMagic: false, attack: 5, element: "none", card: { element: "none" } }
+    };
+    const normal = canUseDefenseCard(game, card);
+    game.pendingAttack.isMagic = true;
+    const magic = canUseDefenseCard(game, card);
+    return { normal, magic };
+  })()`),
+  { normal: false, magic: true }
+);
 
 assert.deepEqual(
   evaluate(`(() => {
