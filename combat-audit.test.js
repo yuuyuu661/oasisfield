@@ -93,6 +93,33 @@ assert.equal(
 );
 assert.equal(evaluate('attackCardAllowsEnhancements({ effect: "all_attack" })'), false);
 assert.equal(
+  evaluate(`(() => {
+    const game = {
+      phase: "attack", turn: "player", attackerId: "player", defenderId: "enemy",
+      player: createPlayer("P"), enemy: createPlayer("E"), logs: [],
+      selectedAttackUid: null, selectedAttackCard: null,
+      selectedAttackEnhancementUids: [], selectedAttackMagicUids: [],
+      selectedAttackSupportUids: [], selectedUtilityUid: null,
+      pendingAttack: null, pendingTrade: null, lastBattle: null, hitResult: null,
+      dreamMasks: {}, winner: null, busy: false
+    };
+    const weapon = { uid: "powder-weapon", id: "powder-weapon", sourceName: "こん棒",
+      name: "こん棒", type: "weapon", effect: "attack", attack: 1,
+      element: "none", effectChance: 100 };
+    const powder = { uid: "powder", id: "powder", sourceName: "ちからの粉",
+      name: "ちからの粉", type: "item", effect: "boost_attack",
+      effectPower: 10, attack: 0, element: "none" };
+    game.player.hand = [weapon, powder];
+    toggleAttackItemSupport(game, powder);
+    selectAttackCard(game, weapon.uid);
+    startAttack(game, weapon.uid, "enemy");
+    return game.pendingAttack.attack === 11
+      && game.pendingAttack.supportMagicCards[0].uid === "powder"
+      && !game.player.hand.some(card => card.uid === "powder");
+  })()`),
+  true
+);
+assert.equal(
   evaluate(`playerHasWeapon({
     hand: [{ type: "armor", effect: "attack_defense" }]
   })`),

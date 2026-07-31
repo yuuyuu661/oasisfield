@@ -549,7 +549,7 @@ function catalogDescription(card) {
   if (card.effect === "cure_status") return `${card.statusEffect === "all" ? "すべての災い" : "風邪・熱病・霧・閃光"}を消す。`;
   if (card.effect === "random_heal_damage") return "対象のHPを10回復するか、10ダメージを与える。確率は50%ずつ。";
   if (card.effect === "summon_guardian") return "対象に守護神をランダムに1体宿す。";
-  if (card.effect === "boost_attack") return `対象の次の攻撃を+${card.effectPower}する。`;
+  if (card.effect === "boost_attack") return `単体武器と同時に使い、その攻撃を+${card.effectPower}する。`;
   if (card.effect === "mp_free_magic") return "対象が次に使う奇跡のMP消費を0にする。";
   if (card.effect === "self_damage") return `使用者に${card.effectPower}ダメージを与える。`;
   return `${oasisCatalogEffectLabel(card.effect)}。`;

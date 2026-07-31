@@ -380,11 +380,15 @@ function currentBattle() {
       ],
       element: combineAttackElements([
         game.selectedAttackCard,
-        ...enhancementCards
+        ...enhancementCards,
+        ...supportMagics.filter(card => ["add_magic_attack", "boost_attack"].includes(card.effect))
       ]),
       defenseCards: [],
       attack: ((game.selectedAttackCard.attack || 0)
-        + enhancementCards.reduce((sum, card) => sum + Number(card.attack || 0), 0))
+        + enhancementCards.reduce((sum, card) => sum + Number(card.attack || 0), 0)
+        + supportMagics
+          .filter(card => ["add_magic_attack", "boost_attack"].includes(card.effect))
+          .reduce((sum, card) => sum + Number(card.attack || card.effectPower || 0), 0))
         * Math.pow(2, auraCount),
       defense: 0,
       damage: null

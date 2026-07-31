@@ -114,6 +114,42 @@ class OasisFieldRulesTest(unittest.TestCase):
         self.assertEqual(self.game["pending_attack"]["attack"], 2)
         self.assertEqual(actor["mp"], 0)
 
+    def test_strength_powder_is_consumed_with_the_current_single_weapon(self):
+        actor = self.make_actor()
+        actor["hand"] = [card("銅のこん棒"), card("ちからの粉")]
+        weapon, powder = actor["hand"]
+
+        with patch("oasisfield_logic._hit", return_value=True):
+            rules._begin_attack(
+                self.game,
+                actor,
+                weapon["uid"],
+                [powder["uid"]],
+                "2",
+            )
+
+        self.assertEqual(self.game["pending_attack"]["attack"], 11)
+        self.assertEqual(
+            [used["sourceName"] for used in self.game["pending_attack"]["cards"]],
+            ["銅のこん棒", "ちからの粉"],
+        )
+        self.assertEqual(actor["attack_boost"], 0)
+        self.assertNotIn(powder["uid"], {held["uid"] for held in actor["hand"]})
+
+    def test_strength_powder_cannot_be_used_by_itself(self):
+        actor = self.make_actor()
+        powder = card("ちからの粉")
+        actor["hand"] = [powder]
+
+        with self.assertRaisesRegex(rules.OasisRuleError, "武器と同時"):
+            rules._use_utility(
+                self.game,
+                actor,
+                powder["uid"],
+                actor["user_id"],
+                [],
+            )
+
     def test_all_attack_rejects_support(self):
         actor = self.make_actor()
         actor["hand"] = [card("魔神の木馬"), card("＜オーラ＞")]
@@ -323,7 +359,7 @@ class OasisFieldRulesTest(unittest.TestCase):
             self.game["pending_attack"]["attack"],
             int(additional["attack"]),
         )
-        self.assertEqual(self.game["last_event"]["kind"], "attack")
+        self.assertEqual(self.game["last_event"]["kind"], "hit")
 
     def test_magic_staff_uses_twice_all_remaining_mp(self):
         actor = self.make_actor()
@@ -754,6 +790,61 @@ class OasisFieldRulesTest(unittest.TestCase):
         self.assertEqual(player["hp"], 30)
         self.assertEqual(len(player["hand"]), 1)
         self.assertEqual(player["hand"][0]["sourceName"], "銅のこん棒")
+        self.assertEqual(self.game["last_event"]["kind"], "demon")
+        self.assertEqual(self.game["last_event"]["resource"], "hp")
+        self.assertEqual(self.game["last_event"]["amount"], 10)
+
+    def test_endgame_start_is_recorded_for_the_full_screen_announcement(self):
+        self.make_actor()
+        self.game["turn_count"] = self.game["end_time_limit"] - 1
+
+        with patch("oasisfield_logic.random.random", return_value=1.0):
+            rules._next_turn(self.game)
+
+        self.assertTrue(self.game["endgame"])
+        self.assertEqual(self.game["last_event"]["kind"], "endgame")
+        self.assertIn("終末の刻", self.game["last_event"]["message"])
+
+    def test_healing_item_records_target_resource_and_actual_amount(self):
+        actor = self.make_actor()
+        actor["hp"] = 37
+        drop = card("スマイルのしずく")
+        actor["hand"] = [drop]
+
+        rules._use_utility(
+            self.game,
+            actor,
+            drop["uid"],
+            actor["user_id"],
+            [],
+        )
+
+        event = next(event for event in self.game["events"] if event["kind"] == "item")
+        self.assertEqual(event["target_id"], actor["user_id"])
+        self.assertEqual(event["resource"], "hp")
+        self.assertEqual(event["amount"], 5)
+        self.assertEqual(event["outcome"], "heal")
+
+    def test_attack_hit_and_defense_are_recorded_as_ordered_events(self):
+        actor = self.make_actor()
+        defender = rules.find_player(self.game, "2")
+        actor["hand"] = [card("銅のこん棒")]
+        defender["hand"] = [card("革の帽子")]
+        weapon = actor["hand"][0]
+        armor = defender["hand"][0]
+
+        with patch("oasisfield_logic._hit", return_value=True):
+            rules._begin_attack(self.game, actor, weapon["uid"], [], defender["user_id"])
+        rules._defend(self.game, defender, [armor["uid"]])
+
+        kinds = [event["kind"] for event in self.game["events"][-3:]]
+        self.assertEqual(kinds, ["attack", "hit", "block"])
+        self.assertEqual(
+            [event["id"] for event in self.game["events"]],
+            sorted(event["id"] for event in self.game["events"]),
+        )
+        self.assertEqual(self.game["last_event"]["cards"][0]["sourceName"], "革の帽子")
+        self.assertEqual(self.game["last_event"]["attack_cards"][0]["sourceName"], "銅のこん棒")
 
     def test_dangerous_mortar_returns_when_discarded(self):
         player = self.make_actor()

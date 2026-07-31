@@ -21,6 +21,7 @@ STARTING_HAND = 9
 END_LIMITS = {50, 75, 100, 125, 150}
 DISEASE_CHAIN = ("cold", "fever", "hell", "heaven")
 ATTACK_SUPPORT_EFFECTS = {"add_magic_attack", "double_attack", "sure_all_attack"}
+ATTACK_ITEM_SUPPORT_EFFECTS = {"boost_attack"}
 REACTIVE_MAGIC_EFFECTS = {"reflect_magic", "wall_defense"}
 SPECIAL_EFFECTS = {"sell", "buy", "exchange"}
 DEFENSIVE_EFFECTS = {
@@ -135,6 +136,7 @@ def new_game(
         "battle": None,
         "event_seq": 0,
         "last_event": None,
+        "events": [],
         "logs": ["対戦相手の準備を待っています。"],
         "pot": 0,
         "winner_ids": [],
@@ -231,7 +233,10 @@ def _resolve_demon(
     demon: dict[str, Any],
 ) -> None:
     name = demon.get("sourceName", demon["name"])
+    resource = None
+    amount = 0
     if name in {"小悪魔", "中悪魔", "大悪魔"}:
+        resource = "hp"
         amount = int(demon.get("effectPower", 0))
         _damage(game, player, amount)
         text = f'{name}が現れ、{player["user_name"]}に{amount}ダメージを与えました。'
@@ -245,8 +250,10 @@ def _resolve_demon(
             if _discard_owned(game, player, selected):
                 discarded += 1
         text = f'イタズラマンが現れ、{player["user_name"]}の神器・奇跡を{discarded}個捨てました。'
+        amount = discarded
     else:
         resource = random.choice(("hp", "mp", "gold"))
+        amount = 10
         if resource == "hp":
             _heal(player, 10)
         else:
@@ -254,6 +261,17 @@ def _resolve_demon(
         label = {"hp": "HP", "mp": "MP", "gold": "￥"}[resource]
         text = f'めぐみの妖精が現れ、{player["user_name"]}の{label}を10増やしました。'
     game["logs"].insert(0, text)
+    _record_event(
+        game,
+        "fairy" if name == "めぐみの妖精" else "demon",
+        player,
+        [demon],
+        text,
+        target_id=player["user_id"],
+        resource=resource,
+        amount=amount,
+        outcome="heal" if name == "めぐみの妖精" else "damage",
+    )
 
 
 def _trim_hand(game: dict[str, Any], player: dict[str, Any]) -> None:
@@ -321,7 +339,7 @@ def _record_event(
     **details: Any,
 ) -> None:
     game["event_seq"] = int(game.get("event_seq", 0)) + 1
-    game["last_event"] = {
+    event = {
         "id": game["event_seq"],
         "kind": kind,
         "actor_id": actor["user_id"] if actor else None,
@@ -336,12 +354,16 @@ def _record_event(
                 "element": card.get("element", "none"),
                 "attack": int(card.get("attack", 0)),
                 "defense": int(card.get("defense", 0)),
+                "image": card.get("image", ""),
             }
             for card in cards
         ],
         "message": message,
         **details,
     }
+    game["last_event"] = event
+    game.setdefault("events", []).append(event)
+    del game["events"][:-40]
 
 
 def _transform_dream(card: dict[str, Any], player: dict[str, Any]) -> dict[str, Any]:
@@ -485,7 +507,16 @@ def _next_turn(game: dict[str, Any]) -> None:
     game["turn_count"] += 1
     if not game["endgame"] and game["turn_count"] >= game["end_time_limit"]:
         game["endgame"] = True
-        game["logs"].insert(0, "終末の刻が始まりました。授かるカードに悪魔が混ざります。")
+        endgame_message = "終末の刻が始まりました。授かるカードに悪魔や妖精が混ざります。"
+        game["logs"].insert(0, endgame_message)
+        _record_event(
+            game,
+            "endgame",
+            None,
+            [],
+            endgame_message,
+            turn_count=game["turn_count"],
+        )
     guardian_owners = [
         player["user_id"]
         for player in _living(game)
@@ -521,6 +552,9 @@ def start_game(game: dict[str, Any], user_id: str) -> None:
     game["turn_index"] = random.randrange(len(game["players"]))
     game["turn_count"] = 0
     game["endgame"] = False
+    game["event_seq"] = 0
+    game["last_event"] = None
+    game["events"] = []
     game["pending_attack"] = None
     game["pending_trade"] = None
     game["winner_ids"] = []
@@ -552,8 +586,12 @@ def _support_sequence(
             raise OasisRuleError("補助カードが見つかりません")
         is_enchantment = card.get("catalogGroup") == "additional_weapon"
         is_magic = card["type"] == "magic" and card.get("effect") in ATTACK_SUPPORT_EFFECTS
+        is_attack_item = (
+            card.get("type") == "item"
+            and card.get("effect") in ATTACK_ITEM_SUPPORT_EFFECTS
+        )
         is_spirit = card.get("effect") == "mp_free_magic"
-        if not (is_enchantment or is_magic or is_spirit):
+        if not (is_enchantment or is_magic or is_attack_item or is_spirit):
             raise OasisRuleError("そのカードは攻撃に重ねられません")
         if primary_all:
             raise OasisRuleError("全体武器には他のカードを重ねられません")
@@ -726,9 +764,12 @@ def _begin_attack(
     cards = [primary, *consumed_supports]
     attack = int(primary.get("attack", primary.get("effectPower", 0)))
     attack += sum(
-        int(card.get("attack", card.get("effectPower", 0)))
+        int(card.get("attack") or card.get("effectPower", 0))
         for card in consumed_supports
-        if card.get("catalogGroup") == "additional_weapon" or card.get("effect") == "add_magic_attack"
+        if (
+            card.get("catalogGroup") == "additional_weapon"
+            or card.get("effect") in {"add_magic_attack", "boost_attack"}
+        )
     )
     multiplier = 2 if any(card.get("effect") == "double_attack" for card in consumed_supports) else 1
     attack = max(0, (attack + int(actor.get("attack_boost", 0))) * multiplier)
@@ -817,6 +858,24 @@ def _prepare_defense(game: dict[str, Any], *, roll_hit: bool = True) -> None:
     }
     if not pending["hit"]:
         game["logs"].insert(0, f'{pending["primary"]["name"]}は{defender["user_name"]}に外れました。')
+    attacker = find_player(game, pending["attacker_id"])
+    hit_message = (
+        f'{pending["primary"]["name"]}が{defender["user_name"]}に当たりました。'
+        if pending["hit"]
+        else f'{pending["primary"]["name"]}は{defender["user_name"]}にはずれました。'
+    )
+    _record_event(
+        game,
+        "hit" if pending["hit"] else "miss",
+        attacker,
+        pending["cards"],
+        hit_message,
+        target_id=defender["user_id"],
+        attack=int(pending["attack"]),
+        element=pending["element"],
+        hit=bool(pending["hit"]),
+    )
+    if not pending["hit"]:
         _advance_attack_queue(game)
         return
     if defender["user_id"] == pending["attacker_id"]:
@@ -1036,6 +1095,22 @@ def _defend(game: dict[str, Any], player: dict[str, Any], defense_uids: list[str
         ),
         amount=actual,
         element=resolved_element,
+        attack=int(pending["attack"]),
+        defense=defense_total,
+        attack_cards=[
+            {
+                "uid": card.get("uid"),
+                "name": card.get("name", ""),
+                "sourceName": card.get("sourceName", card.get("name", "")),
+                "type": card.get("type", ""),
+                "effect": card.get("effect", ""),
+                "element": card.get("element", "none"),
+                "attack": int(card.get("attack", 0)),
+                "defense": int(card.get("defense", 0)),
+                "image": card.get("image", ""),
+            }
+            for card in pending["cards"]
+        ],
     )
     if reflector:
         mode = reflector.get("reflectionMode", "reflect")
@@ -1078,12 +1153,8 @@ def _finish_utility(
     actor: dict[str, Any],
     consumed: list[tuple[dict[str, Any], bool]],
     message: str,
+    event_details: dict[str, Any] | None = None,
 ) -> None:
-    for card, learned in consumed:
-        if card["type"] == "magic":
-            _learn(actor, card)
-        if not learned:
-            _draw(game, actor)
     primary = consumed[0][0] if consumed else None
     effect = primary.get("effect", "") if primary else ""
     kind = (
@@ -1093,7 +1164,19 @@ def _finish_utility(
         if primary and primary.get("type") == "magic"
         else "item"
     )
-    _record_event(game, kind, actor, [card for card, _ in consumed], message)
+    _record_event(
+        game,
+        kind,
+        actor,
+        [card for card, _ in consumed],
+        message,
+        **(event_details or {}),
+    )
+    for card, learned in consumed:
+        if card["type"] == "magic":
+            _learn(actor, card)
+        if not learned:
+            _draw(game, actor)
     game["pending_trade"] = None
     game["logs"].insert(0, message)
     if game.get("pending_attack"):
@@ -1121,6 +1204,8 @@ def _use_utility(
         return
     if original.get("effect") in ATTACK_SUPPORT_EFFECTS | REACTIVE_MAGIC_EFFECTS:
         raise OasisRuleError("この奇跡は攻撃または防御と同時に使用してください")
+    if original.get("effect") in ATTACK_ITEM_SUPPORT_EFFECTS:
+        raise OasisRuleError("このアイテムは武器と同時に使用してください")
     target = find_player(game, target_id or actor["user_id"])
     if original.get("target") == "self":
         target = actor
@@ -1155,14 +1240,23 @@ def _use_utility(
     effect = used.get("effect")
     amount = int(used.get("effectPower", used.get("heal", used.get("attack", 0))))
     message = f'{actor["user_name"]}が「{used["name"]}」を使用しました。'
+    event_details: dict[str, Any] = {"target_id": target["user_id"]}
     if effect in {"heal", "heal_hp"}:
-        _heal(target, amount)
+        actual = _heal(target, amount)
+        message = f'{actor["user_name"]}が「{used["name"]}」で{target["user_name"]}のHPを{actual}回復しました。'
+        event_details.update(resource="hp", amount=actual, outcome="heal")
     elif effect == "heal_mp":
+        before = target["mp"]
         target["mp"] = min(99, target["mp"] + amount)
+        actual = target["mp"] - before
+        message = f'{actor["user_name"]}が「{used["name"]}」で{target["user_name"]}のMPを{actual}回復しました。'
+        event_details.update(resource="mp", amount=actual, outcome="heal")
     elif effect == "gold_gain":
+        before = target["gold"]
         target["gold"] = min(99, target["gold"] + amount)
-    elif effect == "boost_attack":
-        target["attack_boost"] += amount
+        actual = target["gold"] - before
+        message = f'{actor["user_name"]}が「{used["name"]}」で{target["user_name"]}の￥を{actual}増やしました。'
+        event_details.update(resource="gold", amount=actual, outcome="heal")
     elif effect == "mp_free_magic":
         target["free_magic_uses"] = int(target.get("free_magic_uses", 0)) + 1
     elif effect == "cure_status":
@@ -1173,7 +1267,14 @@ def _use_utility(
     elif effect == "inflict_status":
         _apply_status(game, target, used.get("statusEffect"))
     elif effect == "random_heal_damage":
-        _heal(target, amount) if random.random() < 0.5 else _damage(game, target, amount)
+        if random.random() < 0.5:
+            actual = _heal(target, amount)
+            message = f'{used["name"]}により{target["user_name"]}のHPが{actual}回復しました。'
+            event_details.update(resource="hp", amount=actual, outcome="heal")
+        else:
+            actual = _damage(game, target, amount)
+            message = f'{used["name"]}により{target["user_name"]}が{actual}ダメージを受けました。'
+            event_details.update(resource="hp", amount=actual, outcome="damage")
     elif effect == "summon_guardian":
         target["guardian"] = _random_guardian(game, target.get("guardian", {}).get("name") if target.get("guardian") else None)
     elif effect == "discard":
@@ -1189,7 +1290,9 @@ def _use_utility(
     elif effect == "random_event":
         _supernatural(game, actor, after_resolution="next_turn")
     elif effect == "self_damage":
-        _damage(game, actor, amount)
+        actual = _damage(game, actor, amount)
+        message = f'{used["name"]}により{actor["user_name"]}が{actual}ダメージを受けました。'
+        event_details.update(target_id=actor["user_id"], resource="hp", amount=actual, outcome="damage")
     elif effect == "custom" and used.get("sourceName", used["name"]) == "あぶないウス":
         if not learned:
             actor["hand"].append(used)
@@ -1205,7 +1308,7 @@ def _use_utility(
         and random.randrange(100) < int(used.get("effectChance", 100))
     ):
         _apply_status(game, target, secondary_status)
-    _finish_utility(game, actor, consumed, message)
+    _finish_utility(game, actor, consumed, message, event_details)
 
 
 GUARDIANS = [
@@ -1945,6 +2048,7 @@ def public_state(game: dict[str, Any], viewer_id: str | None = None) -> dict[str
             "players": players,
             "battle": deepcopy(game.get("battle")),
             "last_event": deepcopy(game.get("last_event")),
+            "events": deepcopy(game.get("events", [])[-30:]),
             "pending_trade": deepcopy(game.get("pending_trade")) if _actor(game)["user_id"] == viewer and game["phase"].startswith("trade_") else None,
             "can_defend": can_defend,
             "logs": list(game["logs"][:30]),

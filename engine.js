@@ -1,7 +1,7 @@
 const HAND_SIZE = 9;
 const MAX_HAND_SIZE = 18;
-const CPU_DELAY = 700;
-const RESOLVE_DELAY = 850;
+const CPU_DELAY = 1100;
+const RESOLVE_DELAY = 1700;
 const DISEASE_CHAIN = ["cold", "fever", "hell", "heaven"];
 
 function renderNow() {
@@ -100,6 +100,10 @@ function isPassiveHandCard(card) {
 function isAttackSupportMagic(card) {
   return card?.type === "magic"
     && ["add_magic_attack", "double_attack", "sure_all_attack"].includes(card.effect);
+}
+
+function isAttackItemSupport(card) {
+  return card?.type === "item" && card.effect === "boost_attack";
 }
 
 function isReactiveMagic(card) {
@@ -349,6 +353,10 @@ function selectAttackCard(game, uid) {
       toggleSpiritSupportCard(game, card);
       return;
     }
+    if (isAttackItemSupport(card)) {
+      toggleAttackItemSupport(game, card);
+      return;
+    }
     game.selectedAttackUid = null;
     game.selectedAttackCard = null;
     game.selectedAttackEnhancementUids = [];
@@ -388,7 +396,7 @@ function selectedAttackSupportCards(game) {
   return sequence
     .map(uid => actor.hand.find(card => card.uid === uid)
       || actor.learnedMagics.find(card => card.uid === uid))
-    .filter(isAttackSupportMagic);
+    .filter(card => isAttackSupportMagic(card) || isAttackItemSupport(card));
 }
 
 function selectedSpiritSupportCards(game) {
@@ -453,6 +461,29 @@ function toggleAttackSupportMagic(game, card) {
   game.logs.unshift(selected.has(card.uid)
     ? `「${card.name}」を武器と同時に使います。`
     : `「${card.name}」の同時使用を解除しました。`);
+  return true;
+}
+
+function toggleAttackItemSupport(game, card) {
+  if (!isAttackItemSupport(card) || game.busy || game.winner || game.turn !== "player") return false;
+  if (!["attack", "target", "utility_target"].includes(game.phase)) return false;
+  if (game.selectedAttackCard && !attackCardAllowsEnhancements(game.selectedAttackCard)) {
+    game.logs.unshift("全体攻撃カードに力の粉は重ねられません。");
+    return false;
+  }
+  const sequence = [...(game.selectedAttackSupportUids || game.selectedAttackMagicUids || [])];
+  const selected = sequence.includes(card.uid);
+  if (selected) {
+    sequence.splice(sequence.indexOf(card.uid), 1);
+  } else {
+    sequence.push(card.uid);
+  }
+  game.selectedAttackSupportUids = sequence;
+  game.selectedUtilityUid = null;
+  game.phase = game.selectedAttackUid ? "target" : "attack";
+  game.logs.unshift(selected
+    ? `「${card.name}」の同時使用を解除しました。`
+    : `「${card.name}」を単体武器と同時に使います。`);
   return true;
 }
 
@@ -582,17 +613,19 @@ function consumeAttackSupportMagics(game, actor) {
 
   cards.forEach(card => {
     let cost = Number(card.mpCost || 0);
-    if (freeMagicUids.has(card.uid)) {
-      cost = 0;
-    } else if (freeUses > 0) {
-      freeUses -= 1;
-      cost = 0;
+    if (card.type === "magic") {
+      if (freeMagicUids.has(card.uid)) {
+        cost = 0;
+      } else if (freeUses > 0) {
+        freeUses -= 1;
+        cost = 0;
+      }
     }
     actor.mp -= cost;
     const handCard = actor.hand.find(candidate => candidate.uid === card.uid);
     if (handCard) {
       removeCardFromHand(actor, card.uid);
-      learnMagic(game, actor, handCard);
+      if (handCard.type === "magic") learnMagic(game, actor, handCard);
     }
     usedCards.push(card);
     drawCount += 1;
@@ -761,7 +794,7 @@ function startAttack(game, uid, defenderId, { allowSelfDefense = false } = {}) {
   }
   const defender = game[defenderId];
   const additionalMagicAttack = attackSupport.cards
-    .filter(card => card.effect === "add_magic_attack")
+    .filter(card => ["add_magic_attack", "boost_attack"].includes(card.effect))
     .reduce((sum, card) => sum + Number(card.attack || card.effectPower || 0), 0);
   const additionalAttack = enhancementCards.reduce((sum, card) => sum + Number(card.attack || 0), 0)
     + additionalMagicAttack;
@@ -770,7 +803,7 @@ function startAttack(game, uid, defenderId, { allowSelfDefense = false } = {}) {
   const attackElement = combineAttackElements([
     used,
     ...enhancementCards,
-    ...attackSupport.cards.filter(card => card.effect === "add_magic_attack")
+    ...attackSupport.cards.filter(card => ["add_magic_attack", "boost_attack"].includes(card.effect))
   ]);
   let attackValue = ((used.attack || 0) + additionalAttack + (attacker.attackBoost || 0))
     * (attacker.attackMultiplier || 1)

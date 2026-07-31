@@ -6177,7 +6177,7 @@
     "cureStatuses": [],
     "element": "none",
     "catalogGroup": "item",
-    "desc": "対象の次の攻撃を+10する。"
+    "desc": "単体武器と同時に使い、その攻撃を+10する。"
   },
   {
     "id": "oasis_catalog_229",
